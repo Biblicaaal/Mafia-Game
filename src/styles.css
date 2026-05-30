@@ -1,0 +1,685 @@
+:root {
+  color: #e7e7e7;
+  background: #050505;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #050505;
+}
+
+button {
+  border: 1px solid #3a3a3a;
+  background: #161616;
+  color: #e7e7e7;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.side {
+  border-right: 1px solid #2b2b2b;
+  background: #0d0d0d;
+  padding: 18px 12px;
+}
+
+.brand {
+  display: grid;
+  gap: 3px;
+  padding: 10px 10px 18px;
+  color: #f0f0f0;
+}
+
+.brand strong {
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand span,
+small,
+.muted {
+  color: #9b9b9b;
+}
+
+.side button {
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.side button.active {
+  border-color: #f0f0f0;
+  background: #2a2a2a;
+  color: #ffffff;
+}
+
+.main {
+  padding: 18px;
+  overflow: auto;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 24px;
+}
+
+h2 {
+  color: #f0f0f0;
+  font-size: 18px;
+}
+
+.top-actions,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.top-actions button,
+.actions button,
+.inline {
+  border-radius: 6px;
+  padding: 9px 11px;
+}
+
+.primary {
+  border-color: #e7e7e7;
+  background: #f0f0f0;
+  color: #050505;
+}
+
+.stop {
+  margin-bottom: 14px;
+  border: 1px solid #8f8f8f;
+  background: #202020;
+  color: #ffffff;
+  padding: 12px 14px;
+  border-radius: 6px;
+}
+
+.control-hub {
+  border: 1px solid #2b2b2b;
+  background: #0d0d0d;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.hub-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.hub-header h2 {
+  margin-bottom: 0;
+  font-size: 22px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #b8b8b8;
+  font-size: 13px;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-legend i {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+.legend-control {
+  background: #f2f2f2;
+}
+
+.legend-rival {
+  background: #808080;
+}
+
+.legend-heat {
+  background: #3c3c3c;
+}
+
+.map-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.city-map {
+  width: 100%;
+  min-height: 520px;
+  border: 1px solid #3b3b3b;
+  border-radius: 8px;
+  background: #85898c;
+  filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.28));
+}
+
+.island-masses path {
+  fill: #1e2020;
+  stroke: #050505;
+  stroke-width: 8;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.38));
+}
+
+.bridges path {
+  fill: none;
+  stroke: #e8e8e8;
+  stroke-width: 7;
+  stroke-linecap: round;
+  opacity: 0.86;
+}
+
+.street-grid path,
+.arterials path {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 0;
+}
+
+.map-district polygon {
+  cursor: pointer;
+  fill: rgba(255, 255, 255, 0.015);
+  stroke: rgba(230, 230, 230, 0.26);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  transition: fill 140ms ease, stroke 140ms ease, filter 140ms ease, transform 140ms ease;
+}
+
+.map-district:hover polygon,
+.map-district.selected polygon {
+  stroke: #ffffff;
+  fill: rgba(255, 255, 255, 0.1);
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.18));
+}
+
+.map-label {
+  pointer-events: none;
+}
+
+.map-label rect {
+  fill: rgba(5, 5, 5, 0.72);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1;
+}
+
+.map-label text {
+  pointer-events: none;
+  fill: #eeeeee;
+  font-size: 14px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 3px;
+  text-anchor: middle;
+}
+
+.map-label .map-metric {
+  fill: #c9c9c9;
+  font-size: 13px;
+  font-weight: 700;
+  stroke-width: 4px;
+}
+
+.island-label {
+  fill: rgba(245, 245, 245, 0.34);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+.map-dossier {
+  border: 1px solid #2b2b2b;
+  background: #161616;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.map-dossier h3 {
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mini-stats span {
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 8px;
+  color: #b8b8b8;
+}
+
+.mini-stats b {
+  display: block;
+  color: #f0f0f0;
+  font-size: 18px;
+}
+
+.district-control {
+  border: 1px solid #2b2b2b;
+  background: #0d0d0d;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.district-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.district-head h2,
+.district-head p {
+  margin-bottom: 0;
+}
+
+.district-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+}
+
+.block-map-panel {
+  border: 1px solid #303030;
+  border-radius: 8px;
+  background: #0b0b0b;
+  padding: 10px;
+}
+
+.map-tools {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.map-tools button {
+  min-height: 28px;
+  min-width: 34px;
+  padding: 0 9px;
+}
+
+.map-tools span {
+  color: #bdbdbd;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.block-map {
+  display: block;
+  width: 100%;
+  height: 520px;
+  border-radius: 6px;
+  background: #070707;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.block-map.dragging {
+  cursor: grabbing;
+}
+
+.district-watermark {
+  fill: #080808;
+}
+
+.district-outer {
+  fill: #171717;
+  stroke: #e4e4e4;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.district-roads path {
+  fill: none;
+  stroke: #050505;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.district-roads path.major {
+  stroke: #000000;
+}
+
+.district-roads path.minor {
+  stroke: #0d0d0d;
+}
+
+.district-block > path {
+  cursor: pointer;
+  fill: #202020;
+  stroke: #646464;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.district-block.selected > path {
+  fill: #292929;
+  stroke: #ffffff;
+}
+
+.district-block text {
+  display: none;
+}
+
+.parcel path {
+  cursor: pointer;
+  stroke: #080808;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.parcel path[data-size="1"] {
+  opacity: 0.72;
+}
+
+.parcel path[data-size="2"] {
+  opacity: 0.82;
+}
+
+.parcel path[data-size="3"] {
+  opacity: 0.92;
+}
+
+.parcel path[data-size="4"] {
+  opacity: 1;
+  stroke-width: 1.8;
+}
+
+.owner-unknown path {
+  fill: #2b2b2b;
+}
+
+.owner-neutral path {
+  fill: #4b4b4b;
+}
+
+.owner-player path {
+  fill: #d2d2d2;
+}
+
+.owner-rival path {
+  fill: #777777;
+}
+
+.owner-police path {
+  fill: #191919;
+  stroke: #cfcfcf;
+}
+
+.parcel:hover path,
+.parcel.selected path {
+  stroke: #ffffff;
+  stroke-width: 2.4;
+}
+
+.selected-block-label {
+  fill: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  text-anchor: middle;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: #050505;
+  stroke-width: 5px;
+}
+
+.district-landmarks {
+  pointer-events: none;
+}
+
+.district-landmarks circle {
+  fill: #e8e8e8;
+  stroke: #050505;
+  stroke-width: 2;
+}
+
+.district-landmarks text {
+  fill: #f5f5f5;
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #050505;
+  stroke-width: 3px;
+}
+
+.district-dossier {
+  display: grid;
+  gap: 12px;
+}
+
+.district-dossier section {
+  border: 1px solid #303030;
+  background: #151515;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.district-dossier h3 {
+  margin-bottom: 8px;
+}
+
+.actions.compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: 10px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.panel,
+.stat,
+.districts button,
+.message,
+.rows > div {
+  border: 1px solid #2b2b2b;
+  background: #111111;
+  border-radius: 8px;
+}
+
+.panel {
+  padding: 14px;
+  grid-column: span 2;
+}
+
+.stat {
+  min-height: 92px;
+  padding: 14px;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 28px;
+}
+
+ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+li {
+  margin: 7px 0;
+}
+
+.calendar {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar div {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 12px;
+  border-bottom: 1px solid #292929;
+  padding: 8px 0;
+}
+
+.districts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.districts button {
+  min-height: 126px;
+  padding: 14px;
+  text-align: left;
+}
+
+.districts span,
+.rows span,
+.message span {
+  display: block;
+  color: #b8b8b8;
+  margin-top: 5px;
+}
+
+.message {
+  display: block;
+  width: 100%;
+  margin-bottom: 9px;
+  padding: 12px;
+  text-align: left;
+}
+
+.message.important {
+  border-color: #d0d0d0;
+}
+
+.message.critical {
+  border-color: #ffffff;
+  background: #242424;
+}
+
+.message.read {
+  opacity: 0.72;
+}
+
+.rows {
+  display: grid;
+  gap: 9px;
+}
+
+.rows > div {
+  padding: 12px;
+}
+
+.rows p,
+.message p {
+  margin: 7px 0 0;
+  color: #d6d6d6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 880px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side {
+    border-right: 0;
+    border-bottom: 1px solid #2b2b2b;
+  }
+
+  .top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .district-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .city-map {
+    min-height: 360px;
+  }
+
+  .block-map {
+    min-height: 360px;
+  }
+
+  .panel {
+    grid-column: span 1;
+  }
+
+  .calendar div {
+    grid-template-columns: 1fr;
+  }
+}
