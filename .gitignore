@@ -1,4 +1,4 @@
 node_modules/
 dist/
 dev-server*.log
-preview.png
+preview*.png
