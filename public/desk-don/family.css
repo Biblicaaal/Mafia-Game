@@ -1513,9 +1513,39 @@
   padding: 16px 18px 22px;
 }
 
+.mafia-tree-viewport {
+  height: min(72vh, 760px);
+  min-height: 560px;
+  border-color: rgba(75, 57, 43, .72);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(185, 138, 66, .14), transparent 36%),
+    linear-gradient(180deg, #1f1815, #121010 62%, #0a0a0b);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mafia-tree-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  transition: transform .08s linear;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mafia-tree-viewport .mafia-person,
+.mafia-tree-viewport .mafia-person * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.opinion-tooltip .hidden-opinion {
+  color: #8e9398;
+}
+
 .mafia-layer {
   position: relative;
-  z-index: 2;
   display: flex;
   justify-content: center;
   gap: 18px;
@@ -1608,6 +1638,23 @@
   box-shadow: 0 12px 22px rgba(0, 0, 0, .28);
   cursor: pointer;
   transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease, background .14s ease;
+}
+
+.mafia-node-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: center;
+  min-width: 0;
+}
+
+.mafia-node-wrap.selected {
+  z-index: 30;
+}
+
+.mafia-tree-layers.has-selection .mafia-node-wrap:not(.selected) .mafia-person:hover {
+  z-index: auto;
+  transform: none;
 }
 
 .mafia-person:hover {
@@ -1742,15 +1789,15 @@
   text-align: center;
 }
 
-.mafia-tree-layers .mafia-scrim {
-  z-index: 8;
+.mafia-popover {
+  left: calc(100% + 12px);
+  top: 0;
+  z-index: 10;
+  pointer-events: auto;
 }
 
-.mafia-popover {
-  left: auto;
-  right: 18px;
-  top: 18px;
-  z-index: 10;
+.mafia-node-wrap .mafia-popover {
+  transform-origin: left top;
 }
 
 @media (max-width: 1180px) {
