@@ -1,0 +1,56 @@
+GitHub Pull Changes Summary
+Pulled from: mafia-game/main
+Previous local commit: 35989e9 Add mafia culture generation rules
+New HEAD: ff5575d Tune family tree opinions and mafia popovers
+
+Files changed by pull:
+- public/desk-don/app.js
+- public/desk-don/family.css
+
+New or changed features noticed:
+
+1. Blood family surname coherence
+- Blood family members now appear to inherit the player/family surname more consistently.
+- A new surname helper updates most blood relatives while leaving spouse/late partner names alone.
+- The family system now reapplies this surname pass when the Family phase state is ensured.
+
+2. Mafia organization naming
+- Mafia organizations now get a generated organization name based on their culture profile.
+- The main visible family name can update to the mafia organization's generated name.
+- The Mafia Family header now uses the organization name directly instead of only the generic state family name.
+
+3. Mafia opinion recalculation
+- Mafia opinions toward the player now appear to be recalculated from multiple factors instead of only using a one-time cultural bias.
+- Factors include cultural fit, loyalty, performance, heat risk, and possibly outsider/promotion barriers.
+- Opinion tooltips now support hidden or additional opinion-related information.
+
+4. Mafia promotion barriers / outsider logic
+- Mafia members can now have a promotion barrier such as a feat-gated outsider status.
+- The selected mafia member popover displays promotion barrier information when present.
+- This suggests future rank progression has an early foundation, even if full promotion gameplay is not implemented yet.
+
+5. Improved mafia member popovers
+- Mafia popovers now appear attached to the selected mafia node rather than as a detached side/card overlay.
+- The popover includes traits, cultural fit, performance, loyalty, heat, culture/origin, assignment, concern, and promotion barrier when present.
+- Selected mafia nodes are wrapped in a new node wrapper so the popover can be positioned relative to the card.
+
+6. Mafia tree zoom and pan
+- The Mafia Family tree now has its own viewport state.
+- Mouse wheel zoom and drag-to-pan controls were added for the mafia tree, similar to the blood family tree.
+- There are reset/transform helpers for the mafia tree view.
+
+7. Mafia tree selection focus
+- Selecting a mafia member now dims/focuses the tree differently.
+- Non-selected mafia nodes suppress hover enlargement while a selection is active, making the selected popover easier to read.
+- Click-out behavior was adjusted so dragging the mafia tree does not immediately close the selected profile.
+
+8. Mafia tree styling updates
+- Added styles for the mafia tree viewport, draggable world layer, selected node wrapper, and node-attached popover.
+- The mafia viewport has a dark brown/noir background matching the existing Family tab look.
+- User-select is disabled inside the mafia tree viewport to make panning feel cleaner.
+
+9. Render/state behavior update
+- Rendering the Family tab now ensures the Family phase state first, so organization naming and generated family data are ready before the sidebar/header is built.
+
+Overall impression:
+This pull polishes the Mafia Family tab into a more usable tree surface. The biggest additions are mafia-tree pan/zoom, node-attached popovers, generated mafia organization names, more coherent family surnames, and a stronger foundation for future promotion/rank progression.
