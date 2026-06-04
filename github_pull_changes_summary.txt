@@ -1,56 +1,164 @@
-GitHub Pull Changes Summary
-Pulled from: mafia-game/main
-Previous local commit: 35989e9 Add mafia culture generation rules
-New HEAD: ff5575d Tune family tree opinions and mafia popovers
+GitHub Pull / Local Iteration Summary
+Repository: Biblicaaal/Mafia-Game
+Branch: main
+Report date: 2026-06-04
 
-Files changed by pull:
+Purpose of this file:
+This is a handoff report for another Codex session/computer. It summarizes the major local iterations made after the last pull/review cycle, before pushing the current version.
+
+Current changed files in this push:
 - public/desk-don/app.js
-- public/desk-don/family.css
+- github_pull_changes_summary.txt
 
-New or changed features noticed:
+High-level result:
+The local work focused on the Desk Don prototype, especially the Family tab and Providence simulation. The biggest shift is that Providence now has a more playable economy loop: clean cash, dirty cash, businesses, heat, expenses, daily income, opening grace periods, and AI auto-management all interact in a more legible way.
 
-1. Blood family surname coherence
-- Blood family members now appear to inherit the player/family surname more consistently.
-- A new surname helper updates most blood relatives while leaving spouse/late partner names alone.
-- The family system now reapplies this surname pass when the Family phase state is ensured.
+1. Family tree and relationship tuning
+- Blood and Mafia family trees were iterated to fix duplicated/repeated visible relationship values and overly high starting opinions.
+- Opinion values were retuned so relationships generally start closer to a modest -20 / 0 / +20 range, leaving room for growth.
+- Blood family opinions no longer use rank-distance logic.
+- Blood family bonuses remain stronger than more distant social/cultural bonuses.
+- Hidden motivations such as greed, jealousy, ambition, and related hidden attributes are treated as hidden or partially obscured rather than fully exposed as explicit player-visible motives.
+- Blood family surname behavior was adjusted so the core bloodline coheres around a shared surname while spouses/outsiders can retain different names.
+- Mafia family naming was expanded so the organization is not always "Moretti"; the Don/culture can drive family or organization names.
+- Culture-specific organization framing was added or tuned, such as yakuza/cartel-style naming for non-Italian groups.
+- Outsider/ethnic fit penalties were added conceptually: lower ranks may tolerate outsiders more, while higher ladder positions can impose harsher cultural/rank barriers.
 
-2. Mafia organization naming
-- Mafia organizations now get a generated organization name based on their culture profile.
-- The main visible family name can update to the mafia organization's generated name.
-- The Mafia Family header now uses the organization name directly instead of only the generic state family name.
+2. Mafia tree UI behavior
+- Mafia tree received pan/zoom behavior similar to the blood family tree.
+- Text selection while panning was suppressed.
+- Extra visible pan/zoom controls were removed per user preference.
+- Mafia node click selection was restored after a regression.
+- Mafia popovers were anchored beside the selected member like blood family popovers.
+- Mafia popovers now dim the rest of the tree similarly to blood family selection focus.
+- Popover dimming was corrected so the popover itself stays bright/readable.
+- Panning with a selected character no longer closes the extended info; it should close on right click or a deliberate click-away instead.
 
-3. Mafia opinion recalculation
-- Mafia opinions toward the player now appear to be recalculated from multiple factors instead of only using a one-time cultural bias.
-- Factors include cultural fit, loyalty, performance, heat risk, and possibly outsider/promotion barriers.
-- Opinion tooltips now support hidden or additional opinion-related information.
+3. Providence event framework and metrics
+- Providence was expanded into an event/director framework with hidden metrics and event weighting.
+- Metrics discussed and tuned include prosperity, heat, stability, ambition pressure, momentum, fortune, family opinion, and mafia opinion.
+- Fortune was changed to drift once per day with a random signed movement instead of biasing upward every tick.
+- Momentum and event pressure were retuned so events do not happen every single tick/day by default.
+- Severity weighting was made more responsive to hidden metric ranges: high prosperity/heat/ambition can increase bad-event risk, while low stability/prosperity can increase recovery opportunities.
+- Family Opinion and Mafia Opinion were added as aggregate relationship metrics toward the player.
+- Event effects were extended so events can change clean cash, dirty cash, stress, health, reputation, opinions, and related variables.
+- Stress/health/reputation interactions were added:
+  - High stress can drain health.
+  - Hospital action can heal health.
+  - Low health can hurt prosperity/stability.
+  - High reputation can support stability.
+  - High heat can lower reputation.
 
-4. Mafia promotion barriers / outsider logic
-- Mafia members can now have a promotion barrier such as a feat-gated outsider status.
-- The selected mafia member popover displays promotion barrier information when present.
-- This suggests future rank progression has an early foundation, even if full promotion gameplay is not implemented yet.
+4. Clean cash / dirty cash economy
+- Money is now split into clean cash and dirty cash.
+- Clean cash is needed for most normal purchases and daily ordinary expenses.
+- Dirty cash is used for dirty rackets, heat expenses, corruption/lobbying, and funneling through fronts.
+- Clean businesses now pay clean money only; they no longer generate dirty money.
+- Clean businesses require dirty money as fuel/funnel input to generate clean income.
+- Dirty rackets generate stronger dirty income but add heat pressure and create a need for clean fronts.
+- Dirty business expenses are now paid with dirty money instead of draining clean cash.
+- Clean/front/family/organization overhead is paid with clean money.
+- Heat expenses are paid with dirty money.
+- Daily values are shown explicitly as " / day" in the Providence UI.
+- Cash balances are shown as stored totals, while income/expenses/net values are shown as daily numeric values.
 
-5. Improved mafia member popovers
-- Mafia popovers now appear attached to the selected mafia node rather than as a detached side/card overlay.
-- The popover includes traits, cultural fit, performance, loyalty, heat, culture/origin, assignment, concern, and promotion barrier when present.
-- Selected mafia nodes are wrapped in a new node wrapper so the popover can be positioned relative to the card.
+5. Business system iterations
+- Multiple copies of the same business can now be purchased.
+- AI auto-buy was repeatedly tuned to avoid:
+  - hoarding dirty cash forever,
+  - buying only clean businesses,
+  - buying only dirty rackets,
+  - stopping expansion too early,
+  - letting heat instantly bankrupt the player.
+- Current clean businesses are tuned to produce more meaningful clean daily profit:
+  - Laundry Route: clean income 260/day, expense 70/day, buy-in 1500, net +190/day before dirty fuel considerations.
+  - Shipping Office: clean income 760/day, expense 210/day, buy-in 6200, net +550/day before dirty fuel considerations.
+- Dirty rackets still provide the stronger high-risk dirty income lane:
+  - Corner Book and Union Kickback remain stronger dirty earners and are used to fuel clean fronts.
+- AI scoring now gives clean fronts more value when:
+  - clean income is below clean need,
+  - dirty cash is overflowing,
+  - heat is becoming a problem,
+  - the organization has too many rackets relative to fronts.
 
-6. Mafia tree zoom and pan
-- The Mafia Family tree now has its own viewport state.
-- Mouse wheel zoom and drag-to-pan controls were added for the mafia tree, similar to the blood family tree.
-- There are reset/transform helpers for the mafia tree view.
+6. Expenses, heat, and opening pacing
+- Heat expenses were initially too explosive and could bankrupt the player at/after day 60.
+- A 60-day heat grace period was added:
+  - Heat is locked during days 1-60.
+  - Heat expenses are 0/day during the grace window.
+  - Wealth attention is 0/day during the grace window.
+- After day 60, heat pressure ramps in slowly until about day 105 instead of hitting all at once.
+- Wealth attention was softened and delayed:
+  - Hoarded cash still attracts attention.
+  - Dirty hoards and racket-heavy portfolios matter.
+  - The curve is much less punishing than earlier iterations.
+- Opening clean overhead was also ramped down:
+  - Days 1-20 start around 8% ordinary overhead.
+  - Days 21-60 rise slowly.
+  - After day 60, overhead ramps toward full cost gradually.
+- This fixed the issue where clean expenses consumed all clean cash before the AI could afford even one clean business.
 
-7. Mafia tree selection focus
-- Selecting a mafia member now dims/focuses the tree differently.
-- Non-selected mafia nodes suppress hover enlargement while a selection is active, making the selected popover easier to read.
-- Click-out behavior was adjusted so dragging the mafia tree does not immediately close the selected profile.
+7. Player situation / UI reporting
+- Providence Player Situation now displays:
+  - Dirty Cash balance.
+  - Clean Cash balance.
+  - Total Expenses / Day.
+  - Clean Expenses / Day.
+  - Dirty Expenses / Day.
+  - Heat Expenses / Day.
+  - Wealth Attention / Day.
+  - Clean Need / Day.
+  - Clean Overhead / Day.
+  - Opening Overhead percent.
+  - Heat Ramp percent.
+  - Clean/Dirty business income and net / day.
+- Business cards now show:
+  - daily clean income,
+  - daily dirty income,
+  - daily expense,
+  - daily net if owned,
+  - one-time buy-in separately.
 
-8. Mafia tree styling updates
-- Added styles for the mafia tree viewport, draggable world layer, selected node wrapper, and node-attached popover.
-- The mafia viewport has a dark brown/noir background matching the existing Family tab look.
-- User-select is disabled inside the mafia tree viewport to make panning feel cleaner.
+8. Validation already performed locally
+- Repeated syntax checks passed using:
+  node --check public\desk-don\app.js
+- Repeated in-app browser smoke tests were run against localhost/127.0.0.1:5173.
+- Browser checks confirmed:
+  - no console errors in the tested Providence views,
+  - heat expenses and wealth attention show 0/day during the opening grace,
+  - daily money labels render correctly,
+  - clean/dirty expense lanes render separately,
+  - clean businesses can be auto-bought again,
+  - after overhead tuning, a short auto-continue run bought Laundry Route copies.
 
-9. Render/state behavior update
-- Rendering the Family tab now ensures the Family phase state first, so organization naming and generated family data are ready before the sidebar/header is built.
+9. Important implementation note for the next Codex
+- public/desk-don/app.js currently contains many layered override blocks appended near the end of the file before the render/helper functions. The latest definition wins.
+- This is prototype-style and messy, but intentional for the current iteration pace.
+- If cleaning up, consolidate the final versions of:
+  - ensureBusinessOpportunities
+  - businessLedger
+  - playerExpenseModel
+  - applyDailyBusinessIncome
+  - applyDailyEconomyPressure
+  - autoManageBusinesses
+  - updateNarratorMetrics
+  - playerSituationView
+- Do not assume earlier definitions in the file are still active; check the final override block immediately before function panel(...).
 
-Overall impression:
-This pull polishes the Mafia Family tab into a more usable tree surface. The biggest additions are mafia-tree pan/zoom, node-attached popovers, generated mafia organization names, more coherent family surnames, and a stronger foundation for future promotion/rank progression.
+10. Known tuning watchpoints
+- AI may now buy clean businesses aggressively if the clean lane is favorable. This is likely better than the previous starvation, but may need a cap/ratio pass later.
+- Dirty fuel consumption for clean fronts is not shown as a separate daily cost in all UI surfaces yet; it is represented through frontDirtyNeed/dirtyCoverage in the ledger.
+- Heat after day 60 should now be gradual, but long-run 100-200 day simulation may still need further balancing.
+- Event frequency and severity have been tuned down, but future large event packs may change the pressure curve.
+
+Recommended next test on the other computer:
+1. Pull this push.
+2. Run the preview.
+3. Open Providence.
+4. Auto-continue 80-120 days.
+5. Watch:
+   - clean cash accumulation,
+   - whether Laundry Route / Shipping Office are bought in a sane ratio,
+   - heat after day 60,
+   - whether dirty cash is spent on rackets/heat rather than hoarded,
+   - whether clean expenses stop starving clean business growth.
