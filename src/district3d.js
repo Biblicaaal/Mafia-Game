@@ -2,7 +2,7 @@ import * as THREE from '/node_modules/three/build/three.module.js';
 
 const mounted = new Map();
 const savedViews = new Map();
-const RENDERER_VERSION = '3d-first-district-generator-v31';
+const RENDERER_VERSION = '3d-first-district-generator-v34-convex-districts-visual-exact-only';
 const WORLD_SCALE = 0.1;
 const FLOOR_HEIGHT = 2.35;
 const HEIGHT_SCALE = 0.33;
@@ -559,7 +559,7 @@ function splitQuarterIntoParcels(block, quarter, accessSide, category, districtP
       checked.roadAccessWarning = false;
       checked.isBuildable = checked.isBuildable || (Array.isArray(checked.polygon) && checked.polygon.length >= 3);
       checked.landUse = checked.isBuildable ? 'building' : 'park';
-      if (checked.isBuildable && !checked.seamRoadFrontage) checked.buildingPolygon = checked.polygon;
+      if (checked.isBuildable) checked.buildingPolygon = checked.polygon;
       if (roadBand) {
         frontageParcels.set(i, checked);
         out.push(checked);
@@ -593,7 +593,7 @@ function splitQuarterIntoParcels(block, quarter, accessSide, category, districtP
     checked.roadAccessWarning = false;
     checked.isBuildable = true;
     checked.landUse = 'building';
-    if (!checked.seamRoadFrontage) checked.buildingPolygon = checked.polygon;
+    checked.buildingPolygon = checked.polygon;
     Object.assign(target, checked);
   });
   return out;
@@ -633,6 +633,8 @@ function generate3dDistrict(payload) {
     polygon: rotateVertical ? transformPolygon(district.polygon || [], rotateForGenerationPoint, pivot) : cleanWorldPoly(district.polygon || []),
   }));
   const seamRoads = internalSeamRoadsForDistrict(districtPoly, generationContextDistricts);
+  const perimeterRoads = perimeterRoadsForDistrict(districtPoly, generationContextDistricts);
+  const boundaryRoads = seamRoads.concat(perimeterRoads);
   const b = bounds(districtPoly);
   const style = chooseStyle(payload);
   const cfg = styleConfig(style);
@@ -640,7 +642,8 @@ function generate3dDistrict(payload) {
   const network = createRoadNetwork(b, districtPoly, cfg, style, rand, payload.district, inheritedRoads);
   const xCuts = network.xCuts;
   const yCuts = network.yCuts;
-  const roads = network.roads.concat(seamRoads);
+  const roads = network.roads.concat(boundaryRoads);
+  const districtCenter = centroid(districtPoly);
   const blocks = [];
   for (let xi = 0; xi < xCuts.length - 1; xi += 1) {
     for (let yi = 0; yi < yCuts.length - 1; yi += 1) {
@@ -655,6 +658,7 @@ function generate3dDistrict(payload) {
       const maxY = bottom.value - (bottom.width || 0) * 0.5 - (yi === yCuts.length - 2 ? 0 : landBuffer);
       if (maxX <= minX + 12 || maxY <= minY + 12) continue;
       let poly = clipPolygonToRect(districtPoly, minX, minY, maxX, maxY);
+      poly = clipPolyAwayFromBoundaryRoads(poly, boundaryRoads, districtCenter);
       if (poly.length < 3 || areaFromPoly(poly) < 150) continue;
       const blockId = `b${blocks.length}`;
       const category = chooseBlockCategory(cfg, payload.district, rand);
@@ -728,29 +732,49 @@ function segmentDistanceToSegment(a, b, c, d) {
   );
 }
 
+function polygonDistanceToSegment(poly, a, b) {
+  if (!poly || poly.length < 3) return Infinity;
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i += 1) {
+    const c = poly[i];
+    const d = poly[(i + 1) % poly.length];
+    best = Math.min(
+      best,
+      distancePointToSegment(c, a, b),
+      distancePointToSegment(d, a, b),
+      distancePointToSegment(a, c, d),
+      distancePointToSegment(b, c, d),
+      segmentDistanceToSegment(a, b, c, d),
+    );
+  }
+  return best;
+}
+
+function edgeHasNeighborDistrict(a, b, contextDistricts) {
+  const maxEdgeMatch = 22;
+  const maxSegmentMatch = 14;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  return (contextDistricts || []).some((district) => {
+    const neighborPoly = district?.polygon || [];
+    for (let j = 0; j < neighborPoly.length; j += 1) {
+      const c = neighborPoly[j];
+      const d = neighborPoly[(j + 1) % neighborPoly.length];
+      if (edgeLength(c, d) < 20) continue;
+      if (distancePointToSegment(mid, c, d) <= maxEdgeMatch) return true;
+      if (segmentDistanceToSegment(a, b, c, d) <= maxSegmentMatch) return true;
+    }
+    return false;
+  });
+}
+
 function internalSeamRoadsForDistrict(poly, contextDistricts) {
   const roads = [];
   if (!poly || poly.length < 3 || !contextDistricts?.length) return roads;
-  const maxEdgeMatch = 22;
-  const maxSegmentMatch = 14;
   for (let i = 0; i < poly.length; i += 1) {
     const a = poly[i];
     const b = poly[(i + 1) % poly.length];
     const length = edgeLength(a, b);
-    if (length < 26) continue;
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    const neighbor = (contextDistricts || []).some((district) => {
-      const neighborPoly = district?.polygon || [];
-      for (let j = 0; j < neighborPoly.length; j += 1) {
-        const c = neighborPoly[j];
-        const d = neighborPoly[(j + 1) % neighborPoly.length];
-        if (edgeLength(c, d) < 20) continue;
-        if (distancePointToSegment(mid, c, d) <= maxEdgeMatch) return true;
-        if (segmentDistanceToSegment(a, b, c, d) <= maxSegmentMatch) return true;
-      }
-      return false;
-    });
-    if (!neighbor) continue;
+    if (length < 26 || !edgeHasNeighborDistrict(a, b, contextDistricts)) continue;
     roads.push({
       id: `seam-${i}`,
       kind: 'local',
@@ -762,6 +786,59 @@ function internalSeamRoadsForDistrict(poly, contextDistricts) {
     });
   }
   return roads;
+}
+
+function perimeterRoadsForDistrict(poly, contextDistricts) {
+  const roads = [];
+  if (!poly || poly.length < 3) return roads;
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const length = edgeLength(a, b);
+    if (length < 34 || edgeHasNeighborDistrict(a, b, contextDistricts)) continue;
+    roads.push({
+      id: `perimeter-${i}`,
+      kind: 'collector',
+      width: 17,
+      a,
+      b,
+      centerline: [a, b],
+      perimeter: true,
+    });
+  }
+  return roads;
+}
+
+function signedLineDistanceNumerator(p, a, b) {
+  return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+}
+
+function clipPolyAwayFromBoundaryRoads(poly, boundaryRoads, districtCenter) {
+  let out = cleanWorldPoly(poly || []);
+  if (out.length < 3 || !boundaryRoads?.length) return out;
+  (boundaryRoads || []).forEach((road) => {
+    if (out.length < 3 || !road?.a || !road?.b) return;
+    const len = edgeLength(road.a, road.b);
+    if (len < 1) return;
+    const roadReserve = Math.max(8, (road.width || 13) * 0.72);
+    if (polygonDistanceToSegment(out, road.a, road.b) > roadReserve + 10) return;
+    const localCenter = centroid(out);
+    const centerSide = Math.sign(signedLineDistanceNumerator(localCenter, road.a, road.b))
+      || Math.sign(signedLineDistanceNumerator(districtCenter, road.a, road.b))
+      || 1;
+    const threshold = roadReserve * len;
+    out = clipPolyHalfPlane(
+      out,
+      (p) => centerSide * signedLineDistanceNumerator(p, road.a, road.b) >= threshold,
+      (a, b) => {
+        const da = centerSide * signedLineDistanceNumerator(a, road.a, road.b) - threshold;
+        const db = centerSide * signedLineDistanceNumerator(b, road.a, road.b) - threshold;
+        const t = da / ((da - db) || 0.000001);
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      },
+    );
+  });
+  return cleanWorldPoly(out);
 }
 
 function parcelRoadFrontage(poly, roads) {
@@ -848,7 +925,7 @@ function validateParcelBuildability(parcel, block, districtPoly, roads, cfg) {
     }
   }
   if (isBuildable) landUse = 'building';
-  if (isBuildable && !seamRoadFrontage) buildingPolygon = parcel.polygon;
+  if (isBuildable) buildingPolygon = parcel.polygon;
   return Object.assign(parcel, {
     isBuildable,
     isEdgeParcel,
@@ -1005,12 +1082,12 @@ function roadMesh(road, center, scale, aPoint, bPoint, outerPolygon) {
     { x: a.x - px, y: a.y - py },
   ];
   const roadColors = {
-    highway: 0x1f2228,
-    arterial: 0x292d35,
-    collector: 0x30343b,
-    local: 0x393b3f,
-    avenue: 0x2d2f35,
-    main: 0x30343b,
+    highway: 0x262a2e,
+    arterial: 0x262a2e,
+    collector: 0x262a2e,
+    local: 0x262a2e,
+    avenue: 0x262a2e,
+    main: 0x262a2e,
   };
   const mat = new THREE.MeshLambertMaterial({ color: roadColors[road.kind] || 0x30343b });
   const roadY = road.kind === 'highway' ? 0.038 : road.kind === 'arterial' ? 0.036 : road.kind === 'collector' ? 0.034 : 0.032;
@@ -1096,7 +1173,7 @@ function roadSpanBlockedByBuildings(span, buildingFootprints, roadWidth = 12) {
 function clippedRoadMeshes(scene, road, outerPolygon, center, scale, debugGroup, buildingFootprints = []) {
   const span = roadAxisSpanThroughPolygon(road, outerPolygon);
   if (!span) return;
-  if (!road.seam && roadSpanBlockedByBuildings(span, buildingFootprints, road.width || 12)) return;
+  if (!road.seam && !road.perimeter && roadSpanBlockedByBuildings(span, buildingFootprints, road.width || 12)) return;
   const mesh = roadMesh(road, center, scale, span.a, span.b, outerPolygon);
   if (mesh) scene.add(mesh);
   if (!debugGroup) return;
@@ -1299,12 +1376,12 @@ function heightForParcel(parcel, metrics) {
 
 function addLotSurface(parcel, center, scale, scene, kind = 'empty') {
   const colors = {
-    empty: 0x4f7447,
-    park: 0x4f7447,
-    parking: 0x4f7447,
-    yard: 0x587d4f,
-    plaza: 0x678856,
-    storage: 0x587d4f,
+    empty: 0x8b8f86,
+    park: 0x8b8f86,
+    parking: 0x858981,
+    yard: 0x81867d,
+    plaza: 0x92958d,
+    storage: 0x81867d,
   };
   const mesh = addFlatShape(scene, parcel.polygon, center, scale, colors[kind] || colors.empty, 0.025, 0.78);
   if (mesh) mesh.userData.parcel = parcel;
@@ -1522,12 +1599,12 @@ function buildScene(payload) {
     contextBuildingCount += result.buildings || 0;
   });
 
-  addFlatShape(scene, sceneData.outerPolygon, center, scale, 0x9ba592, 0, 1);
+  addFlatShape(scene, sceneData.outerPolygon, center, scale, 0x969a91, 0, 1);
   const boundary = addLineLoop(scene, sceneData.outerPolygon, center, scale, 0xdfe8d4, 0.08);
   if (boundary) boundary.visible = !!debug.boundary;
 
   (sceneData.blocks || []).forEach((block) => {
-    addFlatShape(scene, block.polygon, center, scale, 0x8f9788, 0.022, 0.72);
+    addFlatShape(scene, block.polygon, center, scale, 0x8e9289, 0.022, 0.72);
     addLineLoop(scene, block.polygon, center, scale, 0x42483f, 0.09);
     const blockArea = Math.max(1, areaFromPoly(block.polygon) * scale * scale);
     let coveredArea = 0;
@@ -1541,7 +1618,7 @@ function buildScene(payload) {
       const dense = !debug.exactExtrusion && coveredArea + projectedCoverage > cap;
       let building = null;
       if (!dense) building = buildingForParcel(parcel, center, scale, materials, rayTargets, buildingMap, debug);
-      if (!building && parcel.isBuildable && !parcel.plannedPark) {
+      if (!building && debug.exactExtrusion === false && parcel.isBuildable && !parcel.plannedPark) {
         building = buildingForParcel(parcel, center, scale, materials, rayTargets, buildingMap, Object.assign({}, debug, { exactExtrusion: false }));
       }
       if (building) {

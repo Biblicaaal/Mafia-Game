@@ -201,18 +201,23 @@ function makeDistrictPoly(x0,y0,x1,y1,island,rand){
 }
 
 function islandInteriorPolygon(cfg,rand){
-  var n=10+Math.floor(rand()*11);
+  var n=8+Math.floor(rand()*4);
   var pts=[];
   var warp=rand()*Math.PI*2;
   for(var i=0;i<n;i++){
     var a=Math.PI*2*i/n;
-    var major=Math.sin(a*2+warp)*(.10+rand()*.06);
-    var minor=Math.sin(a*5+warp*.6)*(.05+rand()*.05);
-    var bite=rand()>.82?-(.10+rand()*.14):0;
-    var wobble=clamp(.80+major+minor+bite+rand()*.22,.58,1.14);
+    var major=Math.sin(a*2+warp)*(.07+rand()*.04);
+    var minor=Math.sin(a*4+warp*.6)*(.035+rand()*.025);
+    var wobble=clamp(.88+major+minor+rand()*.16,.74,1.12);
     pts.push({x:cfg.cx+Math.cos(a)*cfg.rx*.76*wobble,y:cfg.cy+Math.sin(a)*cfg.ry*.76*wobble});
   }
-  return cleanPoly(pts);
+  var hull=convexHull(pts),c=centroid(hull),out=[];
+  for(i=0;i<hull.length;i++){
+    var p=hull[i],next=hull[(i+1)%hull.length];
+    out.push(p);
+    if(dist(p,next)>95&&rand()>.35)out.push(edgeMidpointOutward(p,next,c,8+rand()*10,5,rand));
+  }
+  return cleanPoly(convexHull(out));
 }
 
 function splitWithBand(poly,axis,at,kinkOffset){
@@ -259,15 +264,9 @@ function splitDistrictPoly(poly,rand){
     return parts;
   }
 
-  // Try a stepped shared cut first for a less perfect administrative border.
-  for(var attempt=0;attempt<5;attempt++){
-    var kink=(rand()-.5)*Math.min(vertical?w:h,.12*Math.max(w,h));
-    var stepped=valid(splitWithBand(poly,axis,at,kink),.88);
-    if(stepped)return stepped;
-  }
-
-  // Guaranteed fallback: exact complementary split, no gaps, no overlap.
-  for(attempt=0;attempt<12;attempt++){
+  // Use straight complementary splits. This keeps district shapes outward/convex,
+  // which prevents inward administrative cuts from slicing 3D parcels/buildings.
+  for(var attempt=0;attempt<14;attempt++){
     at=vertical?b.minX+w*(.28+rand()*.44):b.minY+h*(.28+rand()*.44);
     var straight=valid(split(poly,axis,at),.995);
     if(straight)return straight;
@@ -1584,7 +1583,7 @@ function mountDistrict3dIfNeeded(force){
     }
     return;
   }
-  var d=district(state.selected),l=layout(d),dbg=JSON.stringify((state.district3d&&state.district3d.debug)||{}),seed=(state.district3d&&state.district3d.seed)||0,key='3d-first-district-generator-v31-'+d.id+'-'+seed+'-'+dbg;
+  var d=district(state.selected),l=layout(d),dbg=JSON.stringify((state.district3d&&state.district3d.debug)||{}),seed=(state.district3d&&state.district3d.seed)||0,key='3d-first-district-generator-v34-convex-districts-visual-exact-only-'+d.id+'-'+seed+'-'+dbg;
   if(!force&&root.dataset.mountedKey===key)return;
   root.dataset.mountedKey=key;
   window.DeskDon3D.mount(root,district3dPayload(d,l),function(parcel){
