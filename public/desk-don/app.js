@@ -486,7 +486,121 @@ if(districtOverlapCount()>0&&attempt<6)return generateProceduralCity('city-'+Dat
 state.districts=districtRows.map(function(a){return{id:a[0],name:a[1],wealth:a[2],police:a[3],corruption:a[4],fear:a[5],order:a[6],control:a[7],rival:a[8]};});state.selected=state.districts[0].id;state.selectedBlock='';state.selectedParcel='';state.familyAssignments=null;state.tab='Dashboard';state.mapMode='city';state.mapTransition=null;state.stopReason=isInitial?'Paused manually':'Generated city seed: '+seed;layouts={};if(!state.mapName)state.mapName=mapCityName;
 if(!state.islandNames)state.islandNames=islandNames.slice();
 runParcelTests();render();}
-function makeParcel(polygon,blockId,index,d,rand,frontage,depth,accessKind){var ar=area(polygon),owners=['unknown','neutral','neutral','neutral','player','rival','police'],kinds=frontage<18?['shop','bar','office','tenement','cafe']:frontage>44?['warehouse','garage','yard','club','market']:['shop','garage','bar','office','club','laundry','cafe'],bn=blockId.split('_b')[1]||'0',ratio=frontage/Math.max(1,depth),shape=polygon.length>=6?'irregular parcel':ratio>1.3?'wide rectangle lot':ratio<.72?'deep rectangle lot':rand()>.6?'trapezoid lot':'rectangle lot';return{id:blockId+'_p'+index,blockId:blockId,label:bn+'-'+(index+1),kind:kinds[Math.floor(rand()*kinds.length)],polygon:cleanPoly(polygon),size:ar>2600?4:ar>1600?3:ar>800?2:1,value:Math.round(d.wealth*ar/1350*(.55+rand()*.42)),heat:Math.round(d.police*(.28+rand()*.72)),occupiedBy:owners[Math.floor(rand()*owners.length)],familyId:'',isHQ:false,shape:shape,frontage:Math.round(frontage),depth:Math.round(depth),streetAccess:true,accessKind:accessKind};}
+var parcelSizeWeights={TINY:1,SMALL:2,MEDIUM:4,LARGE:8,HUGE:16};
+var districtMixProfiles={
+  poorResidential:{Residential:65,Commercial:15,Industrial:5,Criminal:10,Civic:5},
+  middleResidential:{Residential:70,Commercial:18,Industrial:2,Criminal:3,Civic:7},
+  wealthyResidential:{Residential:75,Commercial:10,Industrial:0,Criminal:1,Civic:14},
+  commercial:{Residential:15,Commercial:60,Industrial:5,Criminal:8,Civic:12},
+  nightlife:{Residential:10,Commercial:55,Industrial:0,Criminal:20,Civic:15},
+  industrial:{Residential:5,Commercial:10,Industrial:70,Criminal:10,Civic:5},
+  warehousePort:{Residential:3,Commercial:8,Industrial:62,Criminal:17,Civic:10},
+  civic:{Residential:10,Commercial:20,Industrial:0,Criminal:2,Civic:68},
+  financial:{Residential:5,Commercial:55,Industrial:0,Criminal:5,Civic:35},
+  slum:{Residential:50,Commercial:15,Industrial:8,Criminal:22,Civic:5},
+  mixedUrban:{Residential:45,Commercial:30,Industrial:8,Criminal:7,Civic:10}
+};
+var blockMixProfiles={
+  residential:{Residential:75,Commercial:10,Industrial:0,Criminal:5,Civic:10},
+  mainStreet:{Residential:20,Commercial:65,Industrial:0,Criminal:8,Civic:7},
+  backstreet:{Residential:45,Commercial:20,Industrial:10,Criminal:20,Civic:5},
+  industrial:{Residential:0,Commercial:8,Industrial:82,Criminal:8,Civic:2},
+  civic:{Residential:5,Commercial:15,Industrial:0,Criminal:0,Civic:80},
+  nightlife:{Residential:5,Commercial:65,Industrial:0,Criminal:25,Civic:5},
+  criminalBacklot:{Residential:15,Commercial:15,Industrial:25,Criminal:40,Civic:5}
+};
+var parcelTypeDb=[
+  {subtype:'Small House',category:'Residential',sector:'Single-Family',size:'SMALL',weight:80,desc:'A modest standalone home for a working family.',legality:'Legal',owner:'Civilian',land:25,property:30,legalIncome:0,illegal:15,traffic:20,visibility:35,security:25,wealth:25,crime:20,policeHeat:10,federalHeat:0,corruption:5,extortion:20,laundering:5,recruitment:20,intelligence:15,strategic:20,community:25,political:5,witness:25,informant:15,raid:20,upgrade:50,decay:20,fire:20,violence:15},
+  {subtype:'Apartment Building',category:'Residential',sector:'Multi-Family',size:'MEDIUM',weight:60,desc:'Dense housing with tenants, witnesses, rent, rumors, and hiding places.',legality:'Legal',owner:'Private Business',land:50,property:60,legalIncome:8,illegal:35,traffic:45,visibility:50,security:35,wealth:40,crime:30,policeHeat:20,federalHeat:0,corruption:15,extortion:45,laundering:20,recruitment:50,intelligence:45,strategic:50,community:55,political:15,witness:70,informant:35,raid:40,upgrade:50,decay:25,fire:30,violence:25},
+  {subtype:'Restaurant',category:'Commercial',sector:'Food & Beverage',size:'MEDIUM',weight:44,desc:'Respectable tables, kitchen cash, regulars, and plenty of cover for meetings.',legality:'Legal / Gray',owner:'Private Business',land:55,property:60,legalIncome:24,illegal:45,traffic:65,visibility:70,security:35,wealth:50,crime:25,policeHeat:22,federalHeat:3,corruption:25,extortion:45,laundering:65,recruitment:25,intelligence:45,strategic:60,community:55,political:25,witness:65,informant:30,raid:40,upgrade:55,decay:12,fire:25,violence:22},
+  {subtype:'Bar',category:'Commercial',sector:'Nightlife',size:'SMALL',weight:42,desc:'A loud room where debts, insults, informants, and cash change hands.',legality:'Gray',owner:'Private Business',land:45,property:50,legalIncome:18,illegal:60,traffic:65,visibility:58,security:40,wealth:38,crime:45,policeHeat:30,federalHeat:5,corruption:35,extortion:55,laundering:45,recruitment:55,intelligence:65,strategic:68,community:35,political:20,witness:55,informant:45,raid:45,upgrade:45,decay:18,fire:25,violence:55},
+  {subtype:'Convenience Store',category:'Commercial',sector:'Retail',size:'SMALL',weight:48,desc:'A small local shop with cash flow, foot traffic, and protection potential.',legality:'Legal',owner:'Private Business',land:40,property:42,legalIncome:14,illegal:25,traffic:60,visibility:70,security:30,wealth:35,crime:25,policeHeat:18,federalHeat:0,corruption:12,extortion:42,laundering:20,recruitment:20,intelligence:35,strategic:45,community:50,political:8,witness:65,informant:30,raid:30,upgrade:40,decay:18,fire:22,violence:24},
+  {subtype:'Pawn Shop',category:'Commercial',sector:'Retail / Gray Market',size:'SMALL',weight:26,desc:'A gray-market storefront useful for fencing, favors, and dirty inventory.',legality:'Gray',owner:'Private Business',land:42,property:48,legalIncome:12,illegal:65,traffic:45,visibility:55,security:48,wealth:35,crime:55,policeHeat:35,federalHeat:10,corruption:35,extortion:45,laundering:50,recruitment:30,intelligence:60,strategic:70,community:25,political:12,witness:40,informant:50,raid:55,upgrade:40,decay:18,fire:20,violence:35},
+  {subtype:'Mechanic Shop',category:'Commercial',sector:'Automotive',size:'MEDIUM',weight:28,desc:'Tools, garages, engines, stolen cars, and a useful back room.',legality:'Gray',owner:'Private Business',land:42,property:52,legalIncome:16,illegal:55,traffic:38,visibility:45,security:45,wealth:35,crime:45,policeHeat:25,federalHeat:8,corruption:25,extortion:40,laundering:35,recruitment:45,intelligence:35,strategic:60,community:35,political:8,witness:35,informant:35,raid:50,upgrade:65,decay:18,fire:35,violence:32},
+  {subtype:'Warehouse',category:'Industrial',sector:'Logistics',size:'LARGE',weight:42,desc:'Storage space, loading doors, trucks, quiet corners, and smuggling value.',legality:'Legal / Gray',owner:'Private Business',land:48,property:62,legalIncome:22,illegal:78,traffic:35,visibility:40,security:55,wealth:42,crime:48,policeHeat:30,federalHeat:25,corruption:45,extortion:50,laundering:55,recruitment:40,intelligence:45,strategic:85,community:25,political:30,witness:30,informant:45,raid:70,upgrade:70,decay:22,fire:35,violence:42},
+  {subtype:'Workshop',category:'Industrial',sector:'Light Manufacturing',size:'MEDIUM',weight:34,desc:'A small production floor with workers, tools, repairs, and side jobs.',legality:'Legal / Gray',owner:'Private Business',land:40,property:50,legalIncome:18,illegal:45,traffic:30,visibility:42,security:42,wealth:35,crime:35,policeHeat:22,federalHeat:8,corruption:25,extortion:42,laundering:35,recruitment:55,intelligence:35,strategic:55,community:35,political:18,witness:35,informant:35,raid:48,upgrade:65,decay:22,fire:38,violence:35},
+  {subtype:'Safehouse',category:'Criminal',sector:'Operational Support',size:'SMALL',weight:8,desc:'A quiet illegal shelter used for hiding people, guns, or cash.',legality:'Hidden Illegal',owner:'Independent Criminal',land:30,property:35,legalIncome:0,illegal:35,traffic:12,visibility:15,security:65,wealth:25,crime:65,policeHeat:28,federalHeat:18,corruption:30,extortion:10,laundering:5,recruitment:30,intelligence:40,strategic:75,community:10,political:5,witness:12,informant:35,raid:72,upgrade:65,decay:18,fire:18,violence:35},
+  {subtype:'Underground Casino',category:'Criminal',sector:'Gambling Operations',size:'MEDIUM',weight:7,desc:'Hidden tables with major cash, major gossip, and major exposure.',legality:'Hidden Illegal',owner:'Independent Criminal',land:48,property:70,legalIncome:0,illegal:95,traffic:55,visibility:35,security:68,wealth:65,crime:75,policeHeat:55,federalHeat:35,corruption:70,extortion:75,laundering:80,recruitment:35,intelligence:70,strategic:90,community:15,political:45,witness:50,informant:65,raid:75,upgrade:45,decay:15,fire:22,violence:55},
+  {subtype:'Drug House',category:'Criminal',sector:'Street Distribution',size:'SMALL',weight:10,desc:'A dangerous illegal retail point with fast cash and ugly attention.',legality:'Illegal',owner:'Independent Criminal',land:20,property:25,legalIncome:0,illegal:75,traffic:42,visibility:35,security:35,wealth:18,crime:85,policeHeat:60,federalHeat:35,corruption:35,extortion:35,laundering:5,recruitment:40,intelligence:35,strategic:55,community:5,political:5,witness:55,informant:75,raid:40,upgrade:35,decay:45,fire:35,violence:80},
+  {subtype:'Crew HQ',category:'Criminal',sector:'Command',size:'MEDIUM',weight:4,desc:'A local criminal command point, not currently assigned to any AI family.',legality:'Hidden Illegal',owner:'Independent Criminal',land:45,property:65,legalIncome:0,illegal:60,traffic:28,visibility:25,security:78,wealth:35,crime:80,policeHeat:45,federalHeat:38,corruption:55,extortion:55,laundering:35,recruitment:80,intelligence:75,strategic:95,community:10,political:25,witness:22,informant:55,raid:85,upgrade:65,decay:15,fire:22,violence:78},
+  {subtype:'Police Station',category:'Civic',sector:'Law Enforcement',size:'LARGE',weight:6,desc:'A local precinct. Dangerous to attack, valuable to corrupt, impossible to ignore.',legality:'Legal',owner:'Government',land:70,property:85,legalIncome:0,illegal:5,traffic:60,visibility:95,security:90,wealth:55,crime:0,policeHeat:95,federalHeat:35,corruption:70,extortion:0,laundering:0,recruitment:5,intelligence:90,strategic:100,community:85,political:85,witness:80,informant:20,raid:95,upgrade:10,decay:5,fire:10,violence:20},
+  {subtype:'Church',category:'Civic',sector:'Religious',size:'MEDIUM',weight:20,desc:'A community anchor for family, funerals, charity, guilt, and legitimacy.',legality:'Legal',owner:'Religious Institution',land:50,property:65,legalIncome:0,illegal:10,traffic:55,visibility:85,security:35,wealth:35,crime:0,policeHeat:15,federalHeat:0,corruption:30,extortion:5,laundering:15,recruitment:25,intelligence:55,strategic:60,community:95,political:50,witness:65,informant:20,raid:40,upgrade:25,decay:15,fire:20,violence:5},
+  {subtype:'Clinic',category:'Civic',sector:'Healthcare',size:'MEDIUM',weight:18,desc:'A small medical facility for injuries, witnesses, doctors, and quiet favors.',legality:'Legal',owner:'Private Business',land:50,property:60,legalIncome:12,illegal:20,traffic:55,visibility:75,security:45,wealth:45,crime:5,policeHeat:20,federalHeat:5,corruption:35,extortion:25,laundering:15,recruitment:15,intelligence:45,strategic:60,community:80,political:35,witness:65,informant:25,raid:45,upgrade:45,decay:10,fire:15,violence:10},
+  {subtype:'Bank Branch',category:'Commercial',sector:'Finance',size:'MEDIUM',weight:10,desc:'Money, records, loans, surveillance, and serious consequences.',legality:'Legal',owner:'Bank',land:80,property:90,legalIncome:45,illegal:45,traffic:70,visibility:90,security:90,wealth:85,crime:10,policeHeat:55,federalHeat:60,corruption:60,extortion:35,laundering:65,recruitment:10,intelligence:75,strategic:95,community:55,political:75,witness:80,informant:30,raid:95,upgrade:20,decay:5,fire:8,violence:25},
+  {subtype:'Law Firm',category:'Commercial',sector:'Professional Services',size:'SMALL',weight:15,desc:'Paper shields, court whispers, respectable blackmail, and expensive favors.',legality:'Legal / Gray',owner:'Private Business',land:65,property:70,legalIncome:28,illegal:35,traffic:40,visibility:70,security:55,wealth:70,crime:10,policeHeat:18,federalHeat:12,corruption:80,extortion:25,laundering:35,recruitment:10,intelligence:80,strategic:75,community:30,political:80,witness:35,informant:25,raid:60,upgrade:30,decay:8,fire:10,violence:10},
+  {subtype:'Union Hall',category:'Civic',sector:'Political / Labor',size:'MEDIUM',weight:12,desc:'Labor power, strikes, construction, protection, and political pressure.',legality:'Legal / Gray',owner:'Union',land:55,property:65,legalIncome:0,illegal:55,traffic:55,visibility:70,security:55,wealth:45,crime:35,policeHeat:35,federalHeat:30,corruption:85,extortion:65,laundering:40,recruitment:70,intelligence:75,strategic:90,community:75,political:90,witness:60,informant:45,raid:65,upgrade:35,decay:15,fire:20,violence:55},
+  {subtype:'Train Station',category:'Civic',sector:'Transportation',size:'HUGE',weight:5,desc:'A major transit node for movement, surveillance, smuggling, witnesses, and police.',legality:'Legal / Gray',owner:'Government',land:85,property:95,legalIncome:50,illegal:75,traffic:100,visibility:100,security:75,wealth:55,crime:35,policeHeat:60,federalHeat:45,corruption:70,extortion:65,laundering:55,recruitment:65,intelligence:95,strategic:100,community:90,political:90,witness:100,informant:60,raid:80,upgrade:20,decay:10,fire:25,violence:45}
+];
+function districtParcelProfile(d){
+  if(d.name&&/Financial/i.test(d.name))return'financial';
+  if(d.name&&/Dock|Harbor|Port|Rail|Airport|Warehouse/i.test(d.name))return'warehousePort';
+  if(d.name&&/Iron|Yard|Works|Factory/i.test(d.name))return'industrial';
+  if(d.name&&/Theater|Market|Midtown/i.test(d.name))return'commercial';
+  if(d.fear>30||d.rival>42||d.corruption>72)return'slum';
+  if(d.wealth>76)return'wealthyResidential';
+  if(d.wealth<38)return'poorResidential';
+  if(d.police>68&&d.wealth>62)return'civic';
+  return'mixedUrban';
+}
+function weightedKey(map,rand){
+  var total=Object.keys(map).reduce(function(s,k){return s+Math.max(0,map[k]||0);},0),roll=rand()*Math.max(1,total),run=0,keys=Object.keys(map);
+  for(var i=0;i<keys.length;i++){run+=Math.max(0,map[keys[i]]||0);if(roll<=run)return keys[i];}
+  return keys[0];
+}
+function parcelBlockType(frontage,depth,d,rand,accessKind){
+  var wide=frontage>42,deep=depth>frontage*1.35,quiet=/back|rear|alley/i.test(accessKind||'');
+  if(d.police>68&&rand()>.68)return'civic';
+  if(d.corruption>70&&quiet&&rand()>.45)return'criminalBacklot';
+  if((d.name&&/Dock|Rail|Warehouse|Iron|Yard/i.test(d.name))||wide&&deep)return'industrial';
+  if(wide&&rand()>.28)return'mainStreet';
+  if(quiet||frontage<16)return'backstreet';
+  if(d.wealth>72&&rand()>.55)return'residential';
+  return weightedKey({residential:35,mainStreet:22,backstreet:18,industrial:8,civic:7,nightlife:5,criminalBacklot:5},rand);
+}
+function weightedParcelType(category,d,rand,frontage,depth,accessKind){
+  var profile=districtParcelProfile(d),quiet=/back|rear|alley/i.test(accessKind||''),wide=frontage>42;
+  var candidates=parcelTypeDb.filter(function(t){return t.category===category;});
+  if(!candidates.length)candidates=parcelTypeDb;
+  var total=0,weighted=candidates.map(function(t){
+    var w=t.weight||10;
+    if(t.size==='HUGE')w*=.18;
+    if(t.size==='LARGE'&&frontage<24)w*=.35;
+    if(t.size==='SMALL'&&wide&&profile==='financial')w*=.75;
+    if(t.category==='Criminal'&&quiet)w*=1.45;
+    if(t.category==='Commercial'&&wide)w*=1.25;
+    if(t.category==='Industrial'&&/Dock|Rail|Warehouse|Iron|Yard/i.test(d.name||''))w*=1.4;
+    if(t.subtype==='Police Station'&&d.police<58)w*=.18;
+    if(t.subtype==='Train Station'&&!/Rail|Station|Airport|Transit|Midtown/i.test(d.name||''))w*=.12;
+    if(t.subtype==='Bank Branch'&&d.wealth<62)w*=.22;
+    if(t.subtype==='Drug House'&&d.wealth>65)w*=.22;
+    if(t.subtype==='Underground Casino'&&d.wealth<45)w*=.55;
+    total+=w;
+    return{type:t,weight:w};
+  });
+  var roll=rand()*Math.max(1,total),run=0;
+  for(var i=0;i<weighted.length;i++){run+=weighted[i].weight;if(roll<=run)return weighted[i].type;}
+  return weighted[0].type;
+}
+function applyParcelLocationModifiers(values,frontage,depth,accessKind,d){
+  var out=Object.assign({},values),wide=frontage>42,quiet=/back|rear|alley/i.test(accessKind||'');
+  if(wide){out.traffic+=12;out.visibility+=10;out.legalIncome=Math.round(out.legalIncome*1.08);out.policeHeat+=4;out.witness+=8;}
+  if(quiet){out.traffic-=8;out.visibility-=15;out.illegal+=10;out.witness-=8;out.raid+=5;}
+  if(d.name&&/Dock|Harbor|Port|Rail|Airport/i.test(d.name)){out.illegal+=8;out.federalHeat+=5;out.strategic+=8;}
+  ['traffic','visibility','security','wealth','crime','policeHeat','federalHeat','corruption','extortion','laundering','recruitment','intelligence','strategic','community','political','witness','informant','raid','upgrade','decay','fire','violence'].forEach(function(k){out[k]=clamp(Math.round(out[k]||0),0,100);});
+  out.land=clamp(Math.round(out.land+(d.wealth-50)*.18),0,100);
+  out.property=clamp(Math.round(out.property+(d.wealth-50)*.14),0,100);
+  return out;
+}
+function makeParcel(polygon,blockId,index,d,rand,frontage,depth,accessKind){
+  var ar=area(polygon),bn=blockId.split('_b')[1]||'0',ratio=frontage/Math.max(1,depth),shape=polygon.length>=6?'irregular parcel':ratio>1.3?'wide rectangle lot':ratio<.72?'deep rectangle lot':rand()>.6?'trapezoid lot':'rectangle lot';
+  var blockType=parcelBlockType(frontage,depth,d,rand,accessKind),districtMix=districtMixProfiles[districtParcelProfile(d)]||districtMixProfiles.mixedUrban,blockMix=blockMixProfiles[blockType]||blockMixProfiles.residential;
+  var mixed={};Object.keys(districtMix).forEach(function(k){mixed[k]=(districtMix[k]||0)*.45+(blockMix[k]||0)*.55;});
+  var category=weightedKey(mixed,rand),type=weightedParcelType(category,d,rand,frontage,depth,accessKind);
+  var values=applyParcelLocationModifiers(type,frontage,depth,accessKind,d);
+  var ownership=type.owner||'Civilian',faction=ownership==='Government'?'government':ownership==='Independent Criminal'?'independent_criminal':ownership==='Religious Institution'?'religious':ownership==='Union'?'union':ownership==='Bank'?'bank':'neutral';
+  var size=ar>2600?4:ar>1600?3:ar>800?2:1,propertyValue=Math.round((values.land+values.property)*Math.max(1,parcelSizeWeights[type.size]||size)*12*(.85+rand()*.3));
+  return{id:blockId+'_p'+index,blockId:blockId,label:bn+'-'+(index+1),kind:type.subtype,displayName:type.subtype,category:type.category,sector:type.sector,subtype:type.subtype,description:type.desc,legality:type.legality,ownershipType:ownership,defaultFactionControl:faction,polygon:cleanPoly(polygon),size:size,sizeClass:type.size,footprintWeight:parcelSizeWeights[type.size]||size,value:propertyValue,propertyValue:propertyValue,landValue:values.land,dailyLegalIncome:values.legalIncome,monthlyLegalIncome:values.legalIncome*30,illegalIncomePotential:values.illegal,traffic:values.traffic,visibility:values.visibility,security:values.security,wealthLevel:values.wealth,crimeLevel:values.crime,heat:values.policeHeat,policeHeat:values.policeHeat,federalHeat:values.federalHeat,corruptionPotential:values.corruption,extortionValue:values.extortion,launderingValue:values.laundering,recruitmentValue:values.recruitment,intelligenceValue:values.intelligence,strategicValue:values.strategic,communityImportance:values.community,politicalImportance:values.political,witnessDensity:values.witness,informantRisk:values.informant,raidDifficulty:values.raid,upgradePotential:values.upgrade,decayRisk:values.decay,fireRisk:values.fire,violenceRisk:values.violence,occupiedBy:faction,familyId:'',isHQ:false,isFront:false,isSafehouse:type.subtype==='Safehouse',hasHiddenOperation:type.legality==='Hidden Illegal',hiddenOperationType:type.category==='Criminal'?type.subtype:'',blockType:blockType,shape:shape,frontage:Math.round(frontage),depth:Math.round(depth),streetAccess:true,accessKind:accessKind};
+}
 function ensureFamilyAssignments(){
   if(state.familyAssignments)return state.familyAssignments;
   var rand=seeded('family-assignments-'+state.districts.map(function(d){return d.id;}).join('|'));
@@ -507,30 +621,7 @@ function ensureFamilyAssignments(){
 }
 function assignFamilyHQs(layout,d){
   if(!layout||layout.familyAssigned)return layout;
-  var assignments=ensureFamilyAssignments();
-  var familyId=assignments[d.id];
   layout.familyHQs=[];
-  if(!familyId){layout.familyAssigned=true;return layout;}
-  var rand=seeded('family-hq-'+d.id+'-'+familyId);
-  var all=[];
-  layout.blocks.forEach(function(b){b.parcels.forEach(function(p){all.push({block:b,parcel:p,point:centroid(p.polygon)});});});
-  if(!all.length){layout.familyAssigned=true;return layout;}
-  var family=families.find(function(f){return f.id===familyId;})||families[0];
-  var bb=bounds(layout.outerPolygon);
-  var anchor={x:bb.minX+(bb.maxX-bb.minX)*(.22+rand()*.56),y:bb.minY+(bb.maxY-bb.minY)*(.22+rand()*.56)};
-  var candidates=all.filter(function(item){return item.parcel.size>=2;});
-  if(!candidates.length)candidates=all;
-  candidates.sort(function(a,bp){return dist(a.point,anchor)-dist(bp.point,anchor);});
-  var chosen=candidates[0];
-  if(chosen){
-    chosen.parcel.familyId=family.id;
-    chosen.parcel.occupiedBy=family.id;
-    chosen.parcel.isHQ=true;
-    chosen.parcel.kind='headquarters';
-    var near=all.filter(function(item){return item.parcel!==chosen.parcel&&!item.parcel.familyId;}).sort(function(a,bp){return dist(a.point,chosen.point)-dist(bp.point,chosen.point);})[0];
-    if(near){near.parcel.familyId=family.id;near.parcel.occupiedBy=family.id;}
-    layout.familyHQs.push({familyId:family.id,name:family.name,short:family.short,color:family.color,blockId:chosen.block.id,parcelId:chosen.parcel.id,point:chosen.point});
-  }
   layout.familyAssigned=true;
   return layout;
 }
@@ -628,6 +719,70 @@ function crosswalksForRoads(roads){
 }
 function layout(d){if(layouts[d.id])return layouts[d.id];var rand=seeded(d.id),op=outer(d),b=bounds(op),w=b.maxX-b.minX,h=b.maxY-b.minY,districtArea=area(op),boxArea=w*h,fillRatio=districtArea/Math.max(1,boxArea),slimness=Math.min(w,h)/Math.max(1,Math.max(w,h)),largeBoost=clamp((districtArea-90000)/120000,0,1.25),slimPenalty=slimness<.55?.72:slimness<.7?.86:1,raggedPenalty=fillRatio<.62?.82:fillRatio<.76?.92:1,densityFactor=clamp((1+largeBoost)*slimPenalty*raggedPenalty,.58,1.55),cols=Math.max(4,Math.min(18,Math.round((w/68)*densityFactor)+(d.wealth>72&&densityFactor>.9?1:0))),rows=Math.max(3,Math.min(14,Math.round((h/72)*densityFactor)+(d.order>68&&densityFactor>.9?1:0)));if(slimness<.52){if(w>h){rows=Math.max(3,Math.min(rows,6));cols=Math.max(cols,8);}else{cols=Math.max(4,Math.min(cols,7));rows=Math.max(rows,8);}}var xs=makeCuts(b.minX,b.maxX,cols,rand),ys=makeCuts(b.minY,b.maxY,rows,rand),blocks=[];for(var r=0;r<ys.length-1;r++)for(var c=0;c<xs.length-1;c++){var rectArea=(xs[c+1]-xs[c])*(ys[r+1]-ys[r]),cl=clipBounds(op,xs[c],xs[c+1],ys[r],ys[r+1]);if(cl.length>=3&&area(cl)>Math.max(360,area(op)/260))blocks.push({polygon:cl,isCut:isBorderCutBlock(cl,rectArea),rect:{minX:xs[c],maxX:xs[c+1],minY:ys[r],maxY:ys[r+1]}});}var roads=xs.slice(1,-1).map(function(x,i){var kind=roadKind(i,xs.length-2,'v',d,rand),a={x:x,y:b.minY-24},bb={x:x,y:b.maxY+24};return{id:'v'+i,path:'M '+a.x.toFixed(1)+' '+a.y.toFixed(1)+' L '+bb.x.toFixed(1)+' '+bb.y.toFixed(1),a:a,b:bb,width:roadWidth(kind,rand),kind:kind,name:kind==='minor'?'':roadName(rand,kind)};}).concat(ys.slice(1,-1).map(function(y,i){var kind=roadKind(i,ys.length-2,'h',d,rand),a={x:b.minX-24,y:y},bb={x:b.maxX+24,y:y};return{id:'h'+i,path:'M '+a.x.toFixed(1)+' '+a.y.toFixed(1)+' L '+bb.x.toFixed(1)+' '+bb.y.toFixed(1),a:a,b:bb,width:roadWidth(kind,rand),kind:kind,name:kind==='minor'?'':roadName(rand,kind)};}));var maxBlocks=Math.min(180,blocks.length);var bl=blocks.slice(0,maxBlocks).map(function(block,i){var id=d.id+'_b'+i,p=block.polygon,parcels=parcelize(p,id,d,rand,block.isCut,block.rect);return{id:id,label:'Block '+String.fromCharCode(65+i),polygon:p,isCut:block.isCut,rect:block.rect,pressure:Math.round((d.fear+d.rival+d.police)/3+rand()*12),parcels:parcels,lamps:lampPostsForBlock(p,rand)};});var lm=['Precinct','Market','Club'].map(function(label,i){for(var a=0;a<18;a++){var pt={x:b.minX+(b.maxX-b.minX)*(.24+rand()*.52),y:b.minY+(b.maxY-b.minY)*(.22+rand()*.56)};if(pointIn(pt,op))return{id:'lm'+i,label:label,point:pt};}return{id:'lm'+i,label:label,point:centroid(op)};});var medians=[];roads.forEach(function(r){var decor=medianDecorForRoad(r,rand);if(decor.path)medians.push({roadId:r.id,path:decor.path,items:decor.items});});var result={outerPolygon:op,roads:roads,blocks:bl,landmarks:lm,medians:medians,crosswalks:crosswalksForRoads(roads),familyHQs:[],familyAssigned:false};assignFamilyHQs(result,d);return layouts[d.id]=result;}
 function districtMapArea(id){var fallbackKey=Object.keys(mapDistricts)[0]||'dockside';var s=mapDistricts[id]?mapDistricts[id].points:mapDistricts[fallbackKey].points;return Math.round(area(parsePoints(s)));}
+function districtMapTransform(id){
+  var fallbackKey=Object.keys(mapDistricts)[0]||'dockside',src=parsePoints(mapDistricts[id]?mapDistricts[id].points:mapDistricts[fallbackKey].points);
+  var b=bounds(src),w=b.maxX-b.minX,h=b.maxY-b.minY,all=Object.keys(mapDistricts).map(function(k){return area(parsePoints(mapDistricts[k].points));});
+  var mn=Math.min.apply(null,all),mx=Math.max.apply(null,all),norm=(area(src)-mn)/Math.max(1,mx-mn),target=145000+norm*165000,scale=Math.min(790/w,545/h,Math.sqrt(target/Math.max(1,area(src)))),sw=w*scale,sh=h*scale;
+  return{source:src,bounds:b,scale:scale,ox:(800-sw)/2,oy:(560-sh)/2};
+}
+function mapPointToDistrictLocal(id,p){
+  var t=districtMapTransform(id);
+  return{x:t.ox+(p.x-t.bounds.minX)*t.scale,y:t.oy+(p.y-t.bounds.minY)*t.scale};
+}
+function lineTouchesPoly(a,b,poly){
+  if(pointIn(a,poly)||pointIn(b,poly)||pointIn(lerp(a,b,.5),poly))return true;
+  for(var i=0;i<poly.length;i++)if(segmentsCross(a,b,poly[i],poly[(i+1)%poly.length],.01)||pointOnSegment(poly[i],a,b,1.5))return true;
+  return false;
+}
+function buildIslandRoadNetwork(){
+  var groups={},roads=[];
+  state.districts.forEach(function(d){
+    var s=mapDistricts[d.id];if(!s)return;
+    if(!groups[s.island])groups[s.island]=[];
+    groups[s.island].push({id:d.id,center:{x:s.cx,y:s.cy},poly:parsePoints(s.points),name:d.name});
+  });
+  Object.keys(groups).forEach(function(island){
+    var list=groups[island].slice();
+    list.forEach(function(item){
+      var nearest=list.filter(function(other){return other.id!==item.id;}).sort(function(a,b){return dist(item.center,a.center)-dist(item.center,b.center);}).slice(0,2);
+      nearest.forEach(function(other){
+        var key=[item.id,other.id].sort().join('|');
+        if(!roads.some(function(r){return r.key===key;}))roads.push({id:'island-'+key,key:key,kind:'arterial',width:20,a:item.center,b:other.center,source:'district-link',island:island});
+      });
+    });
+  });
+  (mapBridges||[]).forEach(function(pathText,i){
+    var pts=parseSvgPathPolygon(pathText),ends=[pts[0],pts[pts.length-1]].filter(Boolean);
+    ends.forEach(function(end,j){
+      var best=null;
+      Object.keys(groups).forEach(function(island){
+        groups[island].forEach(function(item){
+          var d=dist(end,item.center);
+          if(!best||d<best.d)best={item:item,island:island,d:d};
+        });
+      });
+      if(best&&best.d<260)roads.push({id:'bridge-feed-'+i+'-'+j,kind:'highway',width:24,a:end,b:best.item.center,source:'bridge-feed',bridgeIndex:i,island:best.island});
+    });
+  });
+  return{version:'island-network-v01',roads:roads,groups:groups};
+}
+function inheritedRoadsForDistrict(d,focusId){
+  var s=mapDistricts[d.id];if(!s)return[];
+  var poly=parsePoints(s.points),network=buildIslandRoadNetwork(),targetId=focusId||d.id;
+  return network.roads.filter(function(r){return lineTouchesPoly(r.a,r.b,poly);}).map(function(r,i){
+    return{id:'inherited-'+d.id+'-'+i,kind:r.kind,width:r.width||20,a:mapPointToDistrictLocal(targetId,r.a),b:mapPointToDistrictLocal(targetId,r.b),source:r.source,island:r.island};
+  });
+}
+function islandContextDistrictsForDistrict(d){
+  var selected=mapDistricts[d.id];if(!selected)return[];
+  return state.districts.filter(function(other){
+    var s=mapDistricts[other.id];
+    return s&&other.id!==d.id&&s.island===selected.island;
+  }).map(function(other){
+    var s=mapDistricts[other.id],poly=parsePoints(s.points).map(function(p){return mapPointToDistrictLocal(d.id,p);});
+    return{id:other.id,name:other.name,label:s.label||other.name,polygon:poly,wealth:other.wealth,police:other.police,control:other.control,inheritedRoads:inheritedRoadsForDistrict(other,d.id)};
+  });
+}
 function polygonValid(poly){return Array.isArray(poly)&&poly.length>=3&&area(poly)>1&&poly.every(function(p){return Number.isFinite(p.x)&&Number.isFinite(p.y);});}
 function districtOverlapCount(){var dk=Object.keys(mapDistricts),overlapCount=0;for(var oi=0;oi<dk.length;oi++)for(var oj=oi+1;oj<dk.length;oj++){if(mapDistricts[dk[oi]].island===mapDistricts[dk[oj]].island&&polysOverlap(parsePoints(mapDistricts[dk[oi]].points),parsePoints(mapDistricts[dk[oj]].points)))overlapCount++;}return overlapCount;}
 function runParcelTests(){var d=state.districts[0]||district('dockside'),l=layout(d),checked=0;for(var bi=0;bi<Math.min(8,l.blocks.length);bi++){var b=l.blocks[bi];for(var pi=0;pi<b.parcels.length;pi++){var p=b.parcels[pi];checked++;console.assert(polygonValid(p.polygon),'Parcel polygon should be valid',p);console.assert(pointIn(centroid(p.polygon),b.polygon),'Parcel centroid should remain inside parent block',p);console.assert(p.streetAccess===true,'Parcel must be marked as street-accessible',p);console.assert(p.accessKind,'Parcel should explain street access',p);}for(var i=0;i<b.parcels.length;i++)for(var j=i+1;j<b.parcels.length;j++)console.assert(!polysOverlap(b.parcels[i].polygon,b.parcels[j].polygon),'Parcels should not overlap',b.parcels[i],b.parcels[j]);var coverage=b.parcels.reduce(function(s,p){return s+area(p.polygon);},0)/Math.max(1,area(b.polygon));console.assert(coverage>.55,'Parcels should cover most block land',coverage,b);}console.assert(typeof wheel==='function','wheel handler should be defined');console.assert(typeof pushIntoEllipse==='function','pushIntoEllipse helper should be defined');console.assert(typeof generateProceduralCity==='function','procedural city generator should be defined');console.assert(l.blocks.length>=Math.min(12,Math.floor(area(l.outerPolygon)/9000)),'large districts should generate enough visible blocks',l.blocks.length);console.assert(Object.keys(mapDistricts).length>=1,'city should have at least one district polygon');var overlapCount=districtOverlapCount();console.assert(overlapCount===0,'districts on the same island should not overlap',overlapCount);var islandCenters={};Object.keys(mapDistricts).forEach(function(k){var d=mapDistricts[k];if(!islandCenters[d.island])islandCenters[d.island]=[];islandCenters[d.island].push({x:d.cx,y:d.cy});});var centers=Object.keys(islandCenters).map(function(k){return centroid(islandCenters[k]);});var tooClose=0;for(var ci=0;ci<centers.length;ci++)for(var cj=ci+1;cj<centers.length;cj++)if(dist(centers[ci],centers[cj])<260)tooClose++;console.assert(tooClose<=1,'generated island groups should be cohesive but not stacked',tooClose);var districtVertexCounts=Object.keys(mapDistricts).map(function(k){return parsePoints(mapDistricts[k].points).length;});console.assert(districtVertexCounts.every(function(n){return n>=4&&n<=20;}),'districts should have between 4 and 20 sides',districtVertexCounts);console.log('Desk Don parcel tests passed for '+checked+' generated parcels.');}
@@ -1271,14 +1426,259 @@ function labelSlots(){
 function cityMap(){if(state.mapMode==='district')return districtView(true);var selected=district(state.selected),cityBounds=getCityBounds(),waterLayers=shallowWaterLayers(),shallowHtml=waterLayers.map(function(layer){return'<path class="coast-outer" d="'+layer.outer+'"></path><path class="coast-mid" d="'+layer.mid+'"></path><path class="coast-inner" d="'+layer.inner+'"></path>';}).join(''),islandHtml=islandMasses.map(function(p,i){return'<path fill="'+islandFillColor(i)+'" d="'+p+'"></path>';}).join(''),districtHtml=state.districts.map(function(d){var s=mapDistricts[d.id];if(!s)return'';return'<g class="map-district '+(d.id===state.selected?'selected':'')+(state.mapTransition&&state.mapTransition.id===d.id?' zoom-focus':'')+'"><polygon points="'+s.points+'" data-action="selectDistrict" data-id="'+d.id+'"></polygon></g>';}).join(''),bridgeHtml=mapBridges.map(function(p){var pts=parseSvgPathPolygon(p),a=pts[0]||{x:0,y:0},b=pts[pts.length-1]||a;return'<path class="bridge-shadow" d="'+p+'"></path><path class="bridge-main" d="'+p+'"></path><path class="bridge-core" d="'+p+'"></path><circle class="bridge-end" cx="'+a.x+'" cy="'+a.y+'" r="5"></circle><circle class="bridge-end" cx="'+b.x+'" cy="'+b.y+'" r="5"></circle>';}).join(''),labelHtml=labelSlots(),islandLabelHtml=islandNameLabels(),mapName=state.mapName||mapCityName;return'<section class="control-hub"><div class="hub-header"><div><small>Main control hub</small><h2>MAP VIEW</h2></div><div class="map-legend"><span><i class="legend-control"></i> Player control</span><span><i class="legend-rival"></i> Rival pressure</span><span><i class="legend-heat"></i> Police heat</span></div></div><div class="map-wrap"><div class="city-map-shell"><svg class="city-map '+(state.mapTransition?'zooming':'')+'" viewBox="'+cityBounds.viewBox+'"><defs><pattern id="waterGrid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M 42 0 L 0 0 0 42" fill="none" stroke="rgba(255,255,255,0.035)" stroke-width="1"/></pattern></defs><rect class="deep-water" x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'"/><rect x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'" fill="url(#waterGrid)"/><g class="coastal-water">'+shallowHtml+'</g><g class="island-masses">'+islandHtml+'</g><g class="island-labels">'+islandLabelHtml+'</g>'+districtHtml+'<g class="bridges">'+bridgeHtml+'</g>'+labelHtml+cityTitleSvg(mapName)+'</svg>'+districtTransitionOverlay()+'</div><aside class="map-dossier"><small>Selected district</small><h3>'+esc(selected.name)+'</h3><p>'+esc((mapDistricts[selected.id]?mapDistricts[selected.id].island:'City'))+' district dossier. Click any subdivision to open its orders.</p><div class="mini-stats"><span>Size <b>'+districtMapArea(selected.id)+'</b></span><span>Wealth <b>'+selected.wealth+'</b></span><span>Police <b>'+selected.police+'</b></span><span>Control <b>'+selected.control+'</b></span><span>Rival <b>'+selected.rival+'</b></span></div></aside></div></section>';}
 function getCityBounds(){return{viewBox:'0 0 1120 820',x:0,y:0,w:1120,h:820};}
 function dashboard(){return cityMap()+'<div class="grid"><div class="stat"><small>Dirty Cash</small><strong>$'+money(state.dirty)+'</strong></div><div class="stat"><small>Clean Cash</small><strong>$'+money(state.clean)+'</strong></div><div class="stat"><small>Heat</small><strong>'+state.heat+'</strong></div><div class="stat"><small>Police</small><strong>'+state.police+'</strong></div>'+panel('Active Work',list(state.tasks.filter(function(t){return t.status==='active';}).map(function(t){return t.title+' - '+t.progress+'/'+t.required+' - '+district(t.districtId).name;}),'No crews assigned.'))+panel('Important Inbox',list(state.messages.filter(function(m){return !m.read&&m.importance!=='normal';}).map(function(m){return m.type+': '+m.title;}),'No urgent reports.'))+'</div>';}
-function districtView(embedded){
+function districtParcelStats(l){
+  var all=[];(l.blocks||[]).forEach(function(b){all=all.concat(b.parcels||[]);});
+  var cats={},subtypes={},control={};
+  all.forEach(function(p){cats[p.category]=(cats[p.category]||0)+1;subtypes[p.subtype]=(subtypes[p.subtype]||0)+1;control[p.defaultFactionControl]=(control[p.defaultFactionControl]||0)+1;});
+  function top(map,n){return Object.keys(map).sort(function(a,b){return map[b]-map[a];}).slice(0,n).map(function(k){return k+' '+map[k];}).join(' - ');}
+  return{total:all.length,categories:cats,control:control,topSubtypes:top(subtypes,5),topCategories:top(cats,5)};
+}
+function parcelValueChips(p){
+  if(!p)return'';
+  var rows=[
+    ['Legal/day','$'+money(p.dailyLegalIncome||0)],
+    ['Illegal potential',p.illegalIncomePotential],
+    ['Extortion',p.extortionValue],
+    ['Laundering',p.launderingValue],
+    ['Recruitment',p.recruitmentValue],
+    ['Intel',p.intelligenceValue],
+    ['Strategic',p.strategicValue],
+    ['Witnesses',p.witnessDensity],
+    ['Informants',p.informantRisk],
+    ['Raid diff.',p.raidDifficulty]
+  ];
+  return '<div class="parcel-value-grid">'+rows.map(function(r){return'<span>'+esc(r[0])+' <b>'+esc(r[1])+'</b></span>';}).join('')+'</div>';
+}
+function parcelAvailableActions(p){
+  if(!p)return[];
+  var actions=['Inspect Parcel'];
+  if(p.defaultFactionControl==='neutral'||p.ownershipType==='Private Business'||p.ownershipType==='Civilian'||p.owner==='Private Owner')actions.push('Buy Property','Demand Protection');
+  if((p.launderingValue||0)>=35)actions.push('Create Front');
+  if((p.illegalIncomePotential||0)>=45||p.category==='Criminal')actions.push('Start Racket');
+  if((p.recruitmentValue||0)>=45)actions.push('Recruit Contact');
+  if((p.policeHeat||p.heat||0)>=45)actions.push('Cool Heat');
+  if(p.category==='Civic'||(p.corruptionPotential||0)>=60)actions.push('Cultivate Influence');
+  if((p.security||0)>=60)actions.push('Case Security');
+  return actions.slice(0,7);
+}
+function districtWalkState(d,l){
+  if(!state.districtWalk||state.districtWalk.districtId!==d.id){
+    var c=centroid(l.outerPolygon);
+    state.districtWalk={enabled:false,districtId:d.id,x:c.x,y:c.y,dir:'s',speed:6,viewW:185,viewH:122};
+  }
+  return state.districtWalk;
+}
+function toggleDistrictWalk(){
+  var d=district(state.selected),l=layout(d),w=districtWalkState(d,l);
+  w.enabled=!w.enabled;
+  if(w.enabled)state.district3d={enabled:false,districtId:d.id};
+  if(w.enabled){
+    state.zoom=1;
+    state.pan={x:0,y:0};
+  }
+  render();
+}
+function toggleDistrict3d(){
+  var d=district(state.selected);
+  var enabled=!(state.district3d&&state.district3d.enabled&&state.district3d.districtId===d.id);
+  state.district3d={enabled:enabled,districtId:d.id};
+  if(enabled){
+    var w=districtWalkState(d,layout(d));
+    w.enabled=false;
+    state.zoom=1;
+    state.pan={x:0,y:0};
+  }
+  render();
+}
+function resetDistrict3dCamera(){
+  var root=document.getElementById('district-three-root');
+  if(root&&window.DeskDon3D&&window.DeskDon3D.resetCamera)window.DeskDon3D.resetCamera(root);
+  else mountDistrict3dIfNeeded(true);
+}
+function rotateDistrict3d(delta){
+  var root=document.getElementById('district-three-root');
+  if(root&&window.DeskDon3D&&window.DeskDon3D.rotate)window.DeskDon3D.rotate(root,delta);
+}
+function setDistrict3dView(mode){
+  var root=document.getElementById('district-three-root');
+  if(root&&window.DeskDon3D&&window.DeskDon3D.cameraView)window.DeskDon3D.cameraView(root,mode);
+}
+function regenerateDistrict3d(){
+  state.district3d=state.district3d||{enabled:true,districtId:state.selected};
+  state.district3d.seed=Date.now();
+  state.selected3dParcel=null;
+  mountDistrict3dIfNeeded(true);
+}
+function exportDistrict3dJson(){
+  var root=document.getElementById('district-three-root'),data=root&&window.DeskDon3D&&window.DeskDon3D.exportData?window.DeskDon3D.exportData(root):null;
+  if(!data){state.stopReason='No 3D district data to export';render();return;}
+  var text=JSON.stringify(data,null,2),blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=(data.district&&data.district.id||state.selected||'district')+'-3d.json';a.click();setTimeout(function(){URL.revokeObjectURL(url);},800);
+}
+function toggleDistrict3dDebug(key){
+  state.district3d=state.district3d||{enabled:true,districtId:state.selected};
+  state.district3d.debug=state.district3d.debug||{};
+  state.district3d.debug[key]=!state.district3d.debug[key];
+  mountDistrict3dIfNeeded(true);
+}
+function district3dPayload(d,l){
+  return{
+    district:{id:d.id,name:d.name,wealth:d.wealth,police:d.police,corruption:d.corruption,fear:d.fear,order:d.order,control:d.control,rival:d.rival},
+    seed:(state.district3d&&state.district3d.seed)||0,
+    selectedParcelId:state.selectedParcel,
+    debug:Object.assign({boundary:true,parcelOutlines:true,roadClipPoints:false,selectedParcelId:true,cameraTarget:false,windows:false,exactExtrusion:true},(state.district3d&&state.district3d.debug)||{}),
+    outerPolygon:l.outerPolygon,
+    contextDistricts:islandContextDistrictsForDistrict(d),
+    inheritedRoads:inheritedRoadsForDistrict(d),
+    roads:l.roads,
+    blocks:(l.blocks||[]).map(function(b){return{id:b.id,label:b.label,polygon:b.polygon,pressure:b.pressure,parcels:(b.parcels||[]).map(function(p){return Object.assign({},p,{polygon:p.polygon});})};})
+  };
+}
+function districtDossierHtml(d,l,sb,sp){
+  var selectedBlockText=sb?'<p>Pressure '+sb.pressure+'. Area '+Math.round(area(sb.polygon))+'. Parcels '+sb.parcels.length+'. '+(sb.isCut?'Border-cut block: parcels use only the visual street edge; district borders are rear cut boundaries, not roads.':'Block is split into internal-street zones, then each zone is subdivided.')+'</p>':'';
+  var selectedParcelText=sp?'<p><b>'+esc(sp.subtype||'Generated Parcel')+'</b> - '+esc((sp.category||'Parcel')+' / '+(sp.sector||'Generated'))+'. '+esc(sp.description||'Generated by the 3D-first district system.')+'</p><p>'+esc(sp.shape||'procedural lot')+'. '+esc(sp.sizeClass||'')+' footprint. Area '+Math.round(area(sp.polygon||[]))+'. Frontage '+(sp.frontage||'?')+'m. Depth '+(sp.depth||'?')+'m. Access: '+esc(sp.accessKind||'generated road access')+'.</p><p>Owner: <b>'+esc(sp.ownershipType||sp.owner||'Private Owner')+'</b>. Faction: <b>'+esc(sp.defaultFactionControl||sp.faction||'none')+'</b>. Heat: <b>'+esc(sp.policeHeat||sp.heat||0)+'</b>. Property value $'+money(sp.propertyValue)+'.</p>'+parcelValueChips(sp):'';
+  var parcelStats=districtParcelStats(l);
+  var familyPanel='<section><small>Parcel generation</small><div class="family-list"><span>'+parcelStats.total+' generated parcels</span><span>'+esc(parcelStats.topCategories||'No category counts')+'</span><span>'+esc(parcelStats.topSubtypes||'No subtype counts')+'</span><span>No AI family parcel claims are assigned in this phase.</span></div></section>';
+  var parcelActions=sp?parcelAvailableActions(sp).map(function(a){return'<button onclick="addTask(\''+esc(a).replace(/'/g,'\\\'')+'\')">'+esc(a)+'</button>';}).join(''):'<button onclick="addTask(\'Investigate Parcel\')">Investigate Parcel</button>';
+  return '<section><small>Selected block</small><h3>'+(sb?esc(sb.label):'No block selected')+'</h3>'+selectedBlockText+'<div class="actions compact"><button onclick="addTask(\'Scout Block\')">Scout Block</button><button onclick="addTask(\'Pressure Block\')">Pressure Block</button><button onclick="addTask(\'Cool Block\')">Cool Block</button></div></section><section><small>Selected parcel</small><h3>'+(sp?esc(sp.label+' - '+sp.subtype):'No parcel selected')+'</h3>'+selectedParcelText+'<div class="actions compact">'+parcelActions+'</div></section>'+familyPanel+'<section><small>Known local leads</small>'+list(state.opportunities.filter(function(o){return o.districtId===d.id;}).map(function(o){return o.title+' - '+o.type+' - '+o.value+' - '+o.risk;}),'No known leads in this district yet.')+'</section>';
+}
+function refreshDistrictDossier(){
+  var aside=document.querySelector('.district-dossier');
+  if(!aside)return;
   var d=district(state.selected),l=layout(d);
   var sb=l.blocks.find(function(b){return b.id===state.selectedBlock;})||l.blocks[0];
   var sp=sb?sb.parcels.find(function(p){return p.id===state.selectedParcel;}):null;
+  if(!sp&&state.selected3dParcel)sp=state.selected3dParcel;
+  aside.innerHTML=districtDossierHtml(d,l,sb,sp);
+}
+function selectParcelById(parcelId,parcelData){
+  var d=district(state.selected),l=layout(d);
+  for(var bi=0;bi<l.blocks.length;bi++){
+    var b=l.blocks[bi];
+    for(var pi=0;pi<b.parcels.length;pi++){
+      if(b.parcels[pi].id===parcelId){
+        state.selectedBlock=b.id;
+        state.selectedParcel=parcelId;
+        state.selected3dParcel=null;
+        refreshDistrictDossier();
+        return;
+      }
+    }
+  }
+  if(parcelData){
+    state.selected3dParcel=parcelData;
+    state.selectedBlock=parcelData.blockId||'';
+    state.selectedParcel=parcelId;
+    refreshDistrictDossier();
+  }
+}
+function mountDistrict3dIfNeeded(force){
+  if(!(state.tab==='District'||state.mapMode==='district'))return;
+  var root=document.getElementById('district-three-root');
+  if(!root)return;
+  if(!window.DeskDon3D||!window.DeskDon3D.mount){
+    root.innerHTML='<div class="district-three-loading">Loading Three.js renderer...</div>';
+    if(!root.dataset.waitingThree){
+      root.dataset.waitingThree='1';
+      window.addEventListener('deskdon-three-ready',function(){mountDistrict3dIfNeeded(true);},{once:true});
+    }
+    return;
+  }
+  var d=district(state.selected),l=layout(d),dbg=JSON.stringify((state.district3d&&state.district3d.debug)||{}),seed=(state.district3d&&state.district3d.seed)||0,key='3d-first-district-generator-v31-'+d.id+'-'+seed+'-'+dbg;
+  if(!force&&root.dataset.mountedKey===key)return;
+  root.dataset.mountedKey=key;
+  window.DeskDon3D.mount(root,district3dPayload(d,l),function(parcel){
+    if(parcel&&parcel.id)selectParcelById(parcel.id,parcel);
+  });
+}
+function districtWalkViewBox(w,l){
+  var b=bounds(l.outerPolygon),vw=w.viewW||300,vh=w.viewH||210;
+  var x=clamp(w.x-vw/2,b.minX-30,b.maxX-vw+30);
+  var y=clamp(w.y-vh/2,b.minY-30,b.maxY-vh+30);
+  return x.toFixed(1)+' '+y.toFixed(1)+' '+vw.toFixed(1)+' '+vh.toFixed(1);
+}
+function parcelAtPoint(l,pt){
+  for(var bi=0;bi<l.blocks.length;bi++){
+    var b=l.blocks[bi];
+    if(!pointIn(pt,b.polygon))continue;
+    for(var pi=0;pi<b.parcels.length;pi++)if(pointIn(pt,b.parcels[pi].polygon))return{block:b,parcel:b.parcels[pi]};
+    return{block:b,parcel:null};
+  }
+  return null;
+}
+function scalePoly(poly,scale){
+  var c=centroid(poly);
+  return poly.map(function(p){return{x:c.x+(p.x-c.x)*scale,y:c.y+(p.y-c.y)*scale};});
+}
+function walkRoofDetails(poly,p,randKey){
+  var b=bounds(poly),w=b.maxX-b.minX,h=b.maxY-b.minY,lines='',count=Math.max(2,Math.min(7,Math.floor(Math.max(w,h)/8)));
+  var vertical=w>=h;
+  for(var i=1;i<count;i++){
+    var t=i/count;
+    if(vertical){
+      var x=b.minX+w*t;
+      lines+='<line class="roof-line" x1="'+x.toFixed(1)+'" y1="'+(b.minY+2).toFixed(1)+'" x2="'+x.toFixed(1)+'" y2="'+(b.maxY-2).toFixed(1)+'"></line>';
+    }else{
+      var y=b.minY+h*t;
+      lines+='<line class="roof-line" x1="'+(b.minX+2).toFixed(1)+'" y1="'+y.toFixed(1)+'" x2="'+(b.maxX-2).toFixed(1)+'" y2="'+y.toFixed(1)+'"></line>';
+    }
+  }
+  if((p.category==='Commercial'||p.category==='Civic')&&w>12&&h>9){
+    lines+='<rect class="roof-sign" x="'+(b.minX+w*.22).toFixed(1)+'" y="'+(b.minY+h*.18).toFixed(1)+'" width="'+Math.max(5,w*.34).toFixed(1)+'" height="'+Math.max(3,h*.15).toFixed(1)+'"></rect>';
+  }
+  if(p.category==='Industrial'&&w>14&&h>12){
+    lines+='<circle class="roof-vent" cx="'+(b.minX+w*.28).toFixed(1)+'" cy="'+(b.minY+h*.32).toFixed(1)+'" r="2.2"></circle><circle class="roof-vent" cx="'+(b.minX+w*.62).toFixed(1)+'" cy="'+(b.minY+h*.63).toFixed(1)+'" r="2.2"></circle>';
+  }
+  return lines;
+}
+function walkRoadDetails(l,invZoom){
+  var lane='',cars='';
+  l.roads.forEach(function(r,i){
+    lane+='<path class="walk-lane-mark" d="'+r.path+'"></path>';
+    var p=pointAlongRoad(r,((i*29)%71+14)/100),vertical=Math.abs(r.a.x-r.b.x)<Math.abs(r.a.y-r.b.y),rot=vertical?90:0;
+    if(i%2===0){
+      var carClass=i%4===0?'police':i%3===0?'dark':'teal';
+      cars+='<g class="walk-car '+carClass+'" transform="translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+') rotate('+rot+') scale('+invZoom.toFixed(4)+')"><rect class="car-shadow" x="-8" y="-4" width="18" height="9" rx="2"></rect><rect class="car-body" x="-9" y="-5" width="18" height="10" rx="2"></rect><rect class="car-glass" x="-3" y="-4" width="6" height="8" rx="1"></rect><path class="car-light" d="M 7 -3 L 9 -3 M 7 3 L 9 3"></path></g>';
+    }
+  });
+  return{lane:lane,cars:cars};
+}
+function moveDistrictWalker(dx,dy){
+  if(!(state.tab==='District'||state.mapMode==='district'))return false;
+  var d=district(state.selected),l=layout(d),w=districtWalkState(d,l);
+  if(!w.enabled)return false;
+  var next={x:w.x+dx,y:w.y+dy};
+  if(pointIn(next,l.outerPolygon)){w.x=next.x;w.y=next.y;}
+  else{
+    var b=bounds(l.outerPolygon),clamped={x:clamp(next.x,b.minX,b.maxX),y:clamp(next.y,b.minY,b.maxY)};
+    if(pointIn(clamped,l.outerPolygon)){w.x=clamped.x;w.y=clamped.y;}
+  }
+  if(Math.abs(dx)>Math.abs(dy))w.dir=dx<0?'w':'e';
+  else if(dy)w.dir=dy<0?'n':'s';
+  var hit=parcelAtPoint(l,{x:w.x,y:w.y});
+  if(hit){
+    state.selectedBlock=hit.block.id;
+    if(hit.parcel)state.selectedParcel=hit.parcel.id;
+  }
+  render();
+  return true;
+}
+function districtWalkerHtml(w){
+  var rot={n:180,e:270,s:0,w:90}[w.dir||'s']||0;
+  return '<g class="district-player" transform="translate('+w.x.toFixed(1)+' '+w.y.toFixed(1)+')"><ellipse class="player-shadow" cx="0" cy="5" rx="4.4" ry="2.2"></ellipse><g transform="rotate('+rot+')"><path class="player-coat" d="M -3.5 5 L 0 -5.5 L 3.5 5 Z"></path><circle class="player-head" cx="0" cy="-6.2" r="2.4"></circle><path class="player-brim" d="M -4 -6.8 L 4 -6.8"></path></g></g>';
+}
+function districtView(embedded){
+  var d=district(state.selected),l=layout(d);
+  var walk=districtWalkState(d,l),walking=!!walk.enabled;
+  var three=!!(state.district3d&&state.district3d.enabled&&state.district3d.districtId===d.id);
+  if(three)walking=false;
+  var sb=l.blocks.find(function(b){return b.id===state.selectedBlock;})||l.blocks[0];
+  var sp=sb?sb.parcels.find(function(p){return p.id===state.selectedParcel;}):null;
+  if(three&&!sp&&state.selected3dParcel)sp=state.selected3dParcel;
   var clip='clip-'+d.id;
-  var viewBox='0 0 800 560';
-  var mapTransform='scale('+state.zoom+') translate('+(-state.pan.x)+' '+(-state.pan.y)+')';
-  var invZoom=1/Math.max(.001,state.zoom);
+  var viewBox=walking?districtWalkViewBox(walk,l):'0 0 800 560';
+  var mapTransform=walking?'':'scale('+state.zoom+') translate('+(-state.pan.x)+' '+(-state.pan.y)+')';
+  var invZoom=walking?.42:1/Math.max(.001,state.zoom);
   var bc=sb?centroid(sb.polygon):null;
   var sidewalkHtml='';
   var curbHtml='';
@@ -1287,20 +1687,27 @@ function districtView(embedded){
   var crosswalkHtml=(l.crosswalks||[]).map(function(c){var cx=(c.x1+c.x2)/2,cy=(c.y1+c.y2)/2,dx=(c.x2-c.x1)*.5,dy=(c.y2-c.y1)*.5;return '<g transform="translate('+cx.toFixed(1)+' '+cy.toFixed(1)+') scale('+invZoom.toFixed(4)+')"><line class="crosswalk-stripe" x1="'+(-dx).toFixed(1)+'" y1="'+(-dy).toFixed(1)+'" x2="'+dx.toFixed(1)+'" y2="'+dy.toFixed(1)+'"></line></g>';}).join('');
   var roadHtml=l.roads.map(function(r){return '<path class="'+r.kind+'" d="'+r.path+'" stroke-width="'+r.width+'"></path>';}).join('');
   var roadNameHtml=l.roads.filter(function(r){return r.name;}).map(function(r){var p=lerp(r.a,r.b,.5),vertical=Math.abs(r.a.x-r.b.x)<Math.abs(r.a.y-r.b.y),rot=vertical?90:0;return '<g transform="translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+') rotate('+rot+') scale('+invZoom.toFixed(4)+')"><text class="road-name" x="0" y="0">'+esc(r.name)+'</text></g>';}).join('');
+  var walkRoad=walking?walkRoadDetails(l,invZoom):{lane:'',cars:''};
   var hqHtml=(l.familyHQs||[]).map(function(h){return '<g class="family-marker" transform="translate('+h.point.x+' '+h.point.y+')"><circle r="10" fill="'+h.color+'"></circle><text y="4">'+esc(h.short)+'</text></g>';}).join('');
   var landmarkHtml=l.landmarks.map(function(m){return '<g transform="translate('+m.point.x+' '+m.point.y+')"><circle r="5"></circle><text x="9" y="4">'+esc(m.label)+'</text></g>';}).join('');
   var blockHtml=l.blocks.map(function(b){
     var parcelHtml=b.parcels.map(function(p){
-      return '<g class="parcel '+(sp&&sp.id===p.id?'selected ':'')+(p.isHQ?'hq ':'')+'owner-'+p.occupiedBy+'"><path data-size="'+p.size+'" data-action="selectParcel" data-block="'+b.id+'" data-parcel="'+p.id+'" d="'+path(p.polygon)+'"></path></g>';
+      var topPoly=walking?scalePoly(p.polygon,.76):p.polygon,parcelPath=path(topPoly),wall=walking?'<path class="parcel-wall" d="'+path(p.polygon)+'"></path>':'',roof=walking?walkRoofDetails(topPoly,p,p.id):'';
+      return '<g class="parcel '+(walking?'walk-parcel ':'')+'category-'+String(p.category||'').toLowerCase()+' '+(sp&&sp.id===p.id?'selected ':'')+(p.isHQ?'hq ':'')+'owner-'+p.occupiedBy+'">'+wall+'<path data-size="'+p.size+'" data-action="selectParcel" data-block="'+b.id+'" data-parcel="'+p.id+'" onclick="if(!dragState.moved)selectParcel(\''+b.id+'\',\''+p.id+'\');event.stopPropagation()" d="'+parcelPath+'"></path>'+roof+'</g>';
     }).join('');
-    return '<g class="district-block '+(sb&&sb.id===b.id?'selected':'')+'"><path data-action="selectBlock" data-block="'+b.id+'" d="'+path(b.polygon)+'"></path>'+parcelHtml+'</g>';
+    return '<g class="district-block '+(sb&&sb.id===b.id?'selected':'')+'"><path data-action="selectBlock" data-block="'+b.id+'" onclick="if(!dragState.moved)selectBlock(\''+b.id+'\');event.stopPropagation()" d="'+path(b.polygon)+'"></path>'+parcelHtml+'</g>';
   }).join('');
   var selectedBlockText=sb?'<p>Pressure '+sb.pressure+'. Area '+Math.round(area(sb.polygon))+'. Parcels '+sb.parcels.length+'. '+(sb.isCut?'Border-cut block: parcels use only the visual street edge; district borders are rear cut boundaries, not roads.':'Block is split into internal-street zones, then each zone is subdivided.')+'</p>':'';
-  var selectedFamily=sp&&sp.familyId?families.find(function(f){return f.id===sp.familyId;}):null;
-  var selectedParcelText=sp?'<p>'+esc(sp.kind)+' - '+esc(selectedFamily?selectedFamily.name:sp.occupiedBy)+'. '+esc(sp.shape||'street lot')+'. Size '+sp.size+'. Area '+Math.round(area(sp.polygon))+'. Frontage '+(sp.frontage||'?')+'m. Depth '+(sp.depth||'?')+'m. Street access: '+(sp.streetAccess?'yes':'no')+' ('+esc(sp.accessKind||'street')+'). Value '+sp.value+'. Heat '+sp.heat+'.</p>':'';
-  var familyPanel='<section><small>Family presence</small><div class="family-list">'+((l.familyHQs&&l.familyHQs.length)?l.familyHQs.map(function(h){return '<span><i style="background:'+h.color+'"></i>'+esc(h.name)+' HQ active</span>';}).join(''):'<span>No known family headquarters here yet.</span>')+'</div></section>';
+  var selectedParcelText=sp?'<p><b>'+esc(sp.subtype)+'</b> - '+esc(sp.category+' / '+sp.sector)+'. '+esc(sp.description||'')+'</p><p>'+esc(sp.shape||'street lot')+'. '+esc(sp.sizeClass)+' footprint. Area '+Math.round(area(sp.polygon))+'. Frontage '+(sp.frontage||'?')+'m. Depth '+(sp.depth||'?')+'m. Access: '+esc(sp.accessKind||'street')+'.</p><p>Owner type: <b>'+esc(sp.ownershipType)+'</b>. Control: <b>'+esc(sp.defaultFactionControl)+'</b>. Legality: <b>'+esc(sp.legality)+'</b>. Property value $'+money(sp.propertyValue)+'.</p>'+parcelValueChips(sp):'';
+  var parcelStats=districtParcelStats(l);
+  var familyPanel='<section><small>Parcel generation</small><div class="family-list"><span>'+parcelStats.total+' generated parcels</span><span>'+esc(parcelStats.topCategories||'No category counts')+'</span><span>'+esc(parcelStats.topSubtypes||'No subtype counts')+'</span><span>No AI family parcel claims are assigned in this phase.</span></div></section>';
+  var parcelActions=sp?parcelAvailableActions(sp).map(function(a){return'<button onclick="addTask(\''+esc(a).replace(/'/g,'\\\'')+'\')">'+esc(a)+'</button>';}).join(''):'<button onclick="addTask(\'Investigate Parcel\')">Investigate Parcel</button>';
   var backButton=embedded?'<button class="inline" onclick="backFromDistrict(event)">Back to City Map</button>':'';
-  return '<section class="district-control '+(embedded?'embedded':'')+'"><div class="district-head"><div><small>'+(embedded?'City map / district focus':'District control')+'</small><h2>'+esc(d.name)+'</h2></div><p>Size '+districtMapArea(d.id)+' - Wealth '+d.wealth+' - Police '+d.police+' - Corruption '+d.corruption+' - Fear '+d.fear+' - Public order '+d.order+'</p>'+backButton+'</div><div class="district-layout"><div class="block-map-panel"><div class="map-tools"><button onclick="zoom(-.25)">-</button><button onclick="zoom(.25)">+</button><button onclick="movePan(0,-42)">N</button><button onclick="movePan(-42,0)">W</button><button onclick="movePan(42,0)">E</button><button onclick="movePan(0,42)">S</button><button onclick="state.zoom=1;state.pan={x:0,y:0};render()">Reset</button><span>'+Math.round(state.zoom*100)+'%</span></div><svg class="block-map" viewBox="'+viewBox+'" onwheel="wheel(event)" oncontextmenu="backFromDistrict(event)" onpointerdown="beginMapDrag(event)" onpointermove="dragMap(event)" onpointerup="endMapDrag(event)" onpointercancel="endMapDrag(event)" onlostpointercapture="endMapDrag(event)" onpointerleave="cancelMapDrag(event)"><defs><clipPath id="'+clip+'"><path d="'+path(l.outerPolygon)+'"></path></clipPath></defs><rect width="800" height="560" class="district-watermark"></rect><g class="district-zoom-layer" transform="'+mapTransform+'"><path class="district-outer" d="'+path(l.outerPolygon)+'"></path>'+blockHtml+'<g class="district-roads" clip-path="url(#'+clip+')">'+roadHtml+'</g><g class="district-sidewalks" clip-path="url(#'+clip+')">'+sidewalkHtml+'</g><g class="district-curbs" clip-path="url(#'+clip+')">'+curbHtml+'</g><g class="district-medians" clip-path="url(#'+clip+')">'+medianHtml+'</g><g class="district-crosswalks" clip-path="url(#'+clip+')">'+crosswalkHtml+'</g><g class="district-lamps" clip-path="url(#'+clip+')">'+lampHtml+'</g><g class="district-road-names" clip-path="url(#'+clip+')">'+roadNameHtml+'</g>'+(bc?'<text class="selected-block-label" x="'+bc.x+'" y="'+bc.y+'">'+esc(sb.label)+'</text>':'')+'<g class="district-landmarks">'+landmarkHtml+'</g><g class="family-hqs">'+hqHtml+'</g></g></svg></div><aside class="district-dossier"><section><small>Selected block</small><h3>'+(sb?esc(sb.label):'No block selected')+'</h3>'+selectedBlockText+'<div class="actions compact"><button onclick="addTask(\'Scout Block\')">Scout Block</button><button onclick="addTask(\'Pressure Block\')">Pressure Block</button><button onclick="addTask(\'Cool Block\')">Cool Block</button></div></section><section><small>Selected parcel</small><h3>'+(sp?esc(sp.label):'No parcel selected')+'</h3>'+selectedParcelText+'<div class="actions compact"><button onclick="addTask(\'Investigate Parcel\')">Investigate Parcel</button><button onclick="addTask(\'Set Up Racket\')">Set Up Racket</button><button onclick="addTask(\'Handle Heat\')">Handle Heat</button></div></section>'+familyPanel+'<section><small>Known local leads</small>'+list(state.opportunities.filter(function(o){return o.districtId===d.id;}).map(function(o){return o.title+' - '+o.type+' - '+o.value+' - '+o.risk;}),'No known leads in this district yet.')+'</section></aside></div></section>';
+  var dbg=(state.district3d&&state.district3d.debug)||{};
+  var debugTools='<label><input type="checkbox" '+(dbg.exactExtrusion!==false?'checked':'')+' onchange="toggleDistrict3dDebug(\'exactExtrusion\')"> Exact Parcel Extrusion</label><label><input type="checkbox" '+(dbg.boundary!==false?'checked':'')+' onchange="toggleDistrict3dDebug(\'boundary\')"> Boundary</label><label><input type="checkbox" '+(dbg.parcelOutlines!==false?'checked':'')+' onchange="toggleDistrict3dDebug(\'parcelOutlines\')"> Parcels</label><label><input type="checkbox" '+(dbg.roadClipPoints?'checked':'')+' onchange="toggleDistrict3dDebug(\'roadClipPoints\')"> Road clips</label><label><input type="checkbox" '+(dbg.selectedParcelId!==false?'checked':'')+' onchange="toggleDistrict3dDebug(\'selectedParcelId\')"> Selected ID</label><label><input type="checkbox" '+(dbg.cameraTarget?'checked':'')+' onchange="toggleDistrict3dDebug(\'cameraTarget\')"> Camera target</label><label><input type="checkbox" '+(dbg.windows?'checked':'')+' onchange="toggleDistrict3dDebug(\'windows\')"> Windows</label>';
+  var tools=three?'<button class="primary" onclick="toggleDistrict3d()">2D View</button><button onclick="regenerateDistrict3d()">Regenerate District</button><button onclick="exportDistrict3dJson()">Export JSON</button><button onclick="rotateDistrict3d(-.35)">Rotate Left</button><button onclick="rotateDistrict3d(.35)">Rotate Right</button><button onclick="setDistrict3dView(\'top\')">Top View</button><button onclick="setDistrict3dView(\'iso\')">Iso View</button><button onclick="setDistrict3dView(\'street\')">Street View</button><button onclick="resetDistrict3dCamera()">Reset Camera</button><span>3D-first generator. Iso: wheel zoom, middle drag pan, right drag rotate. Street: WASD, mouse drag look, E/click inspect, ESC back.</span><div class="district-three-debug-tools">'+debugTools+'</div>':walking?'<button class="primary" onclick="toggleDistrictWalk()">Planner View</button><button onclick="moveDistrictWalker(0,-18)">N</button><button onclick="moveDistrictWalker(-18,0)">W</button><button onclick="moveDistrictWalker(18,0)">E</button><button onclick="moveDistrictWalker(0,18)">S</button><span>WASD to walk - parcel underfoot auto-selects</span>':'<button class="primary" onclick="toggleDistrict3d()">3D View</button><button onclick="toggleDistrictWalk()">Walk View</button><button onclick="zoom(-.25)">-</button><button onclick="zoom(.25)">+</button><button onclick="movePan(0,-42)">N</button><button onclick="movePan(-42,0)">W</button><button onclick="movePan(42,0)">E</button><button onclick="movePan(0,42)">S</button><button onclick="state.zoom=1;state.pan={x:0,y:0};render()">Reset</button><span>'+Math.round(state.zoom*100)+'%</span>';
+  var visual=three?'<div id="district-three-root" class="district-three-root"><div class="district-three-loading">Preparing 3D district...</div></div>':'<svg class="block-map '+(walking?'walk-map':'')+'" viewBox="'+viewBox+'" onwheel="wheel(event)" oncontextmenu="backFromDistrict(event)" onpointerdown="beginMapDrag(event)" onpointermove="dragMap(event)" onpointerup="endMapDrag(event)" onpointercancel="endMapDrag(event)" onlostpointercapture="endMapDrag(event)" onpointerleave="cancelMapDrag(event)"><defs><clipPath id="'+clip+'"><path d="'+path(l.outerPolygon)+'"></path></clipPath><pattern id="sidewalkTile" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#c7c2a3"></rect><path d="M 8 0 L 0 0 0 8" fill="none" stroke="#9f9a7f" stroke-width=".7"></path></pattern><linearGradient id="gtaRoad" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4b526f"></stop><stop offset=".5" stop-color="#29304f"></stop><stop offset="1" stop-color="#59607d"></stop></linearGradient></defs><rect width="800" height="560" class="district-watermark"></rect><g class="district-zoom-layer" transform="'+mapTransform+'"><path class="district-outer" d="'+path(l.outerPolygon)+'"></path>'+blockHtml+'<g class="district-roads" clip-path="url(#'+clip+')">'+roadHtml+(walking?walkRoad.lane:'')+'</g><g class="district-sidewalks" clip-path="url(#'+clip+')">'+sidewalkHtml+'</g><g class="district-curbs" clip-path="url(#'+clip+')">'+curbHtml+'</g><g class="district-medians" clip-path="url(#'+clip+')">'+medianHtml+'</g><g class="district-crosswalks" clip-path="url(#'+clip+')">'+crosswalkHtml+'</g><g class="district-lamps" clip-path="url(#'+clip+')">'+lampHtml+'</g><g class="district-road-names" clip-path="url(#'+clip+')">'+roadNameHtml+'</g>'+(walking?'<g class="walk-cars">'+walkRoad.cars+'</g>':'')+(bc&&!walking?'<text class="selected-block-label" x="'+bc.x+'" y="'+bc.y+'">'+esc(sb.label)+'</text>':'')+'<g class="district-landmarks">'+landmarkHtml+'</g><g class="family-hqs">'+hqHtml+'</g>'+(walking?districtWalkerHtml(walk):'')+'</g></svg>'+(walking?'<div class="walk-hud"><b>Street View Prototype</b><span>WASD to walk. Old-GTA scale test, using real parcels.</span></div>':'');
+  return '<section class="district-control '+(embedded?'embedded':'')+' '+(walking?'walking':'')+' '+(three?'three-mode':'')+'"><div class="district-head"><div><small>'+(embedded?'City map / district focus':'District control')+'</small><h2>'+esc(d.name)+'</h2></div><p>Size '+districtMapArea(d.id)+' - Wealth '+d.wealth+' - Police '+d.police+' - Corruption '+d.corruption+' - Fear '+d.fear+' - Public order '+d.order+'</p>'+backButton+'</div><div class="district-layout"><div class="block-map-panel"><div class="map-tools">'+tools+'</div>'+visual+'</div><aside class="district-dossier"><section><small>Selected block</small><h3>'+(sb?esc(sb.label):'No block selected')+'</h3>'+selectedBlockText+'<div class="actions compact"><button onclick="addTask(\'Scout Block\')">Scout Block</button><button onclick="addTask(\'Pressure Block\')">Pressure Block</button><button onclick="addTask(\'Cool Block\')">Cool Block</button></div></section><section><small>Selected parcel</small><h3>'+(sp?esc(sp.label+' - '+sp.subtype):'No parcel selected')+'</h3>'+selectedParcelText+'<div class="actions compact">'+parcelActions+'</div></section>'+familyPanel+'<section><small>Known local leads</small>'+list(state.opportunities.filter(function(o){return o.districtId===d.id;}).map(function(o){return o.title+' - '+o.type+' - '+o.value+' - '+o.risk;}),'No known leads in this district yet.')+'</section></aside></div></section>';
 }
 var creatorSkillNames=['Muscle','Shooting','Driving','Stealth','Street Smarts','Negotiation','Leadership','Finance','Connections','Intelligence'];
 function applyCreatorMods(target,mods){Object.keys(mods||{}).forEach(function(k){target[k]=(target[k]||0)+mods[k];});}
@@ -1801,6 +2208,11 @@ var familyViewOpinionBase=familyView;
 familyView=function(){ensureSocialState();recalcVisibleOpinions();return familyViewOpinionBase();};
 function content(){if(state.tab==='Dashboard')return dashboard();if(state.tab==='Providence')return providenceDebugView();if(state.tab==='Family')return familyView();if(state.tab==='Creator')return characterCreatorView();if(state.tab==='City')return cityMap()+(state.mapMode==='district'?'':'<div class="districts">'+state.districts.map(function(d){var island=mapDistricts[d.id]?mapDistricts[d.id].island:'City';return'<button data-action="selectDistrict" data-id="'+d.id+'"><h3>'+esc(d.name)+'</h3><span>'+esc(island)+' - Wealth '+d.wealth+' - Police '+d.police+'</span><span>Fear '+d.fear+' - Control '+d.control+' - Rival '+d.rival+'</span></button>';}).join('')+'</div>');if(state.tab==='District')return districtView(false);if(state.tab==='Calendar')return panel('Calendar','<div class="calendar">'+Array.from({length:21},function(_,i){var events=state.tasks.filter(function(t){return t.endDay===state.day+i&&t.status==='active';}).map(function(t){return t.title;}).join(', ')||'No scheduled stops';return'<div><b>Day '+(state.day+i)+'</b><span>'+esc(events)+'</span></div>';}).join('')+'</div>');if(state.tab==='Inbox')return panel('Inbox',state.messages.map(function(m,i){return'<button class="message '+(m.read?'read':m.importance)+'" data-action="readMessage" data-index="'+i+'"><b>'+esc(m.title)+'</b><span>Day '+m.day+' - '+esc(m.time)+' - '+esc(m.type)+'</span><p>'+esc(m.body)+'</p></button>';}).join(''));if(state.tab==='Crew')return panel('Crew',rows(state.crew));if(state.tab==='Tasks')return panel('Tasks',rows(state.tasks.map(function(t){return[t.title,t.status+' - '+t.progress+'/'+t.required+' - '+district(t.districtId).name+' - due Day '+t.endDay,t.result||'A report will arrive when the work is done.'];})));if(state.tab==='Opportunities')return panel('Known Opportunities',list(state.opportunities.map(function(o){return o.title+' - '+o.type+' - '+district(o.districtId).name+' - '+o.value+' - '+o.risk;}),'Scout districts and investigate fronts to reveal opportunities.'));if(state.tab==='Fronts')return panel('Fronts','<button class="primary inline" data-action="addTask" data-title="Launder Money">Launder $1,000 Through Front</button><br><br>'+rows(state.fronts));if(state.tab==='Rackets')return panel('Rackets',list(state.rackets.map(function(r){return r[0]+' - '+r[1]+' - '+r[2];}),'No active rackets yet.'));if(state.tab==='Rivals')return panel('Rivals',rows(state.rivals));return'';}
 function render(){ensureNarratorState();ensureEventFrameworkState();if(state.tab==='Family'&&typeof ensureFamilyPhase2==='function')ensureFamilyPhase2();var modal=eventModalView(),nav=tabs.map(function(t){return'<button class="'+(state.tab===t?'active':'')+'" data-action="tab" data-tab="'+t+'">'+t+'</button>';}).join(''),creator=state.tab==='Creator',top='<header class="top"><div><small>Monday Jan 5, 1931</small><h1>Day '+state.day+' - '+esc(state.time)+'</h1></div><div class="top-actions">'+(creator?'<button data-action="tab" data-tab="Dashboard">Dashboard</button><button data-action="tab" data-tab="City">City</button><button data-action="tab" data-tab="Family">Family</button>':'')+'<button data-action="pause">Pause</button><button class="primary" data-action="continue">Continue</button><button data-action="save">Save</button><button data-action="load">Load</button><button data-action="new">New</button><button data-action="randomCity">Generate City</button></div></header>';document.getElementById('app').innerHTML=creator?'<div class="creator-shell"><main class="main creator-main-shell">'+top+(state.stopReason?'<div class="stop"><strong>Simulation stopped:</strong> '+esc(state.stopReason)+'</div>':'')+content()+'</main></div>'+modal:'<div class="shell"><aside class="side"><div class="brand"><strong>Desk Don</strong><span>'+esc(state.family)+'</span></div>'+nav+'</aside><main class="main">'+top+(state.stopReason?'<div class="stop"><strong>Simulation stopped:</strong> '+esc(state.stopReason)+'</div>':'')+content()+'</main></div>'+modal;}
+var renderDistrict3dBase=render;
+render=function(){
+  renderDistrict3dBase();
+  if(state.district3d&&state.district3d.enabled)setTimeout(function(){mountDistrict3dIfNeeded(false);},0);
+};
 function minDistrictZoom(){return 1;}
 function clampPan(){
   state.zoom=Math.max(minDistrictZoom(),Math.min(4,state.zoom));
@@ -1884,7 +2296,8 @@ function applyMapTransform(){
 function beginMapDrag(e){
   if(!e||e.button!==0)return;
   e.preventDefault();
-  dragState={active:true,moved:false,pointerId:e.pointerId,x:e.clientX,y:e.clientY,panX:state.pan.x,panY:state.pan.y};
+  var clickTarget=e.target&&e.target.closest?e.target.closest('[data-action="selectParcel"],[data-action="selectBlock"]'):null;
+  dragState={active:true,moved:false,pointerId:e.pointerId,x:e.clientX,y:e.clientY,panX:state.pan.x,panY:state.pan.y,clickAction:clickTarget?clickTarget.getAttribute('data-action'):'',clickBlock:clickTarget?clickTarget.getAttribute('data-block'):'',clickParcel:clickTarget?clickTarget.getAttribute('data-parcel'):''};
   document.body.classList.add('map-dragging');
   if(e.currentTarget){e.currentTarget.classList.add('dragging');}
   if(e.currentTarget&&e.currentTarget.setPointerCapture){try{e.currentTarget.setPointerCapture(e.pointerId);}catch(err){}}
@@ -1904,11 +2317,18 @@ function dragMap(e){
 function endMapDrag(e){
   if(!dragState.active)return;
   if(e&&dragState.pointerId!==null&&e.pointerId!==dragState.pointerId)return;
+  var shouldSelect=!dragState.moved&&dragState.clickAction;
+  var clickAction=dragState.clickAction,clickBlock=dragState.clickBlock,clickParcel=dragState.clickParcel;
   if(e&&e.currentTarget&&e.currentTarget.releasePointerCapture){try{e.currentTarget.releasePointerCapture(dragState.pointerId);}catch(err){}}
   if(e&&e.currentTarget){e.currentTarget.classList.remove('dragging');}
   document.body.classList.remove('map-dragging');
   dragState.active=false;
   dragState.pointerId=null;
+  if(shouldSelect){
+    if(clickAction==='selectParcel')selectParcel(clickBlock,clickParcel);
+    else if(clickAction==='selectBlock')selectBlock(clickBlock);
+    return;
+  }
   setTimeout(function(){dragState.moved=false;},80);
 }
 function cancelMapDrag(e){
@@ -1950,6 +2370,16 @@ function loadGame(){var saved=localStorage.getItem('desk-don-demo');if(!saved)re
 document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='tab')setTab(el.getAttribute('data-tab'));else if(action==='familySubtab')setFamilySubtab(el.getAttribute('data-tab'));else if(action==='selectFamilyProfile')selectFamilyProfile(el.getAttribute('data-id'));else if(action==='randomizeBloodFamily')randomizeBloodFamily();else if(action==='randomizeMafiaFamily')randomizeMafiaFamily();else if(action==='randomizeRelationships'){randomizeRelationships();render();}else if(action==='simulateSocial')simulateSocialPeriod(parseInt(el.getAttribute('data-weeks')||'1',10));else if(action==='triggerSocial')triggerSocial(el.getAttribute('data-event'));else if(action==='bloodTreeZoom')bloodTreeZoom(parseFloat(el.getAttribute('data-step')||'0'));else if(action==='bloodTreePan')bloodTreePan(parseFloat(el.getAttribute('data-x')||'0'),parseFloat(el.getAttribute('data-y')||'0'));else if(action==='bloodTreeReset')bloodTreeReset();else if(action==='selectDistrict')selectDistrict(el.getAttribute('data-id'));else if(action==='selectFamilyPerson')selectFamilyPerson(el.getAttribute('data-id'));else if(action==='familyDecision')familyDecision(el.getAttribute('data-id'));else if(action==='randomizeCharacter')randomizeCharacter();else if(action==='toggleCreatorSecrets')toggleCreatorSecrets();else if(action==='acceptCharacter')acceptCharacter();else if(action==='selectCreatorRoll')selectCreatorRoll(el.getAttribute('data-index'));else if(action==='toggleCreatorRollLock')toggleCreatorRollLock(el.getAttribute('data-index'));else if(action==='selectBlock'){if(!dragState.moved)selectBlock(el.getAttribute('data-block'));}else if(action==='selectParcel'){if(!dragState.moved)selectParcel(el.getAttribute('data-block'),el.getAttribute('data-parcel'));}else if(action==='addTask')addTask(el.getAttribute('data-title'));else if(action==='providenceRecalc'){updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceRoll'){advanceProvidenceTick(true);autoResolveIfNeeded();render();}else if(action==='toggleAutoResolve'){var ar=ensureNarratorState();ar.autoResolveEvents=!ar.autoResolveEvents;autoResolveIfNeeded();render();}else if(action==='toggleAutoContinue'){var ac=ensureNarratorState();setAutoContinue(!ac.autoContinue);render();}else if(action==='providenceForceGood')forceProvidenceEvent('Good');else if(action==='providenceForceBad')forceProvidenceEvent('Bad');else if(action==='providenceForceCritical')forceProvidenceEvent('Critical');else if(action==='providenceFortune'){var n=ensureNarratorState();n.fortune=clamp(n.fortune+parseInt(el.getAttribute('data-delta')||'0',10),-100,100);updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceTest')setProvidenceTestState(el.getAttribute('data-kind'));else if(action==='providenceClearCooldowns')clearProvidenceCooldowns();else if(action==='resolveEventChoice')resolveActiveEvent(el.getAttribute('data-choice'));else if(action==='selectEventDef'){var ns=ensureEventFrameworkState();ns.selectedEventId=el.getAttribute('data-id');render();}else if(action==='createEventDef')createEventDefinition();else if(action==='duplicateEventDef')duplicateEventDefinition();else if(action==='deleteEventDef')deleteEventDefinition();else if(action==='toggleEventDef')toggleEventDefinition();else if(action==='saveEventDef')saveSelectedEventFromEditor();else if(action==='validateEventDef'){var nv=ensureEventFrameworkState();nv.eventValidation=validateEventDefinition(selectedEventDefinition());render();}else if(action==='previewEventDef'){var pd=selectedEventDefinition();if(pd)queueEvent(pd,'Editor preview',true);render();}else if(action==='testEventDef'){var td=selectedEventDefinition();if(td)queueEvent(td,'Editor test trigger',false);render();}else if(action==='exportEventDefs')exportEventDefinitions();else if(action==='importEventDefs')importEventDefinitions();else if(action==='addBuilderRow')addBuilderRow(el.getAttribute('data-kind'));else if(action==='filterEventDefs'){var nf=ensureEventFrameworkState();nf.eventFilters.search=editorFieldValue('event-search');render();}else if(action==='pause'){setAutoContinue(false);state.stopReason='Paused manually';render();}else if(action==='continue')next();else if(action==='save')saveGame();else if(action==='load')loadGame();else if(action==='new')location.reload();else if(action==='randomCity')generateProceduralCity('city-'+Date.now());else if(action==='readMessage'){state.messages[parseInt(el.getAttribute('data-index'),10)].read=true;render();}});
 document.addEventListener('click',function(e){if(state.tab!=='Family'||!state.selectedFamilyProfile||state.selectedFamilyProfile==='player')return;if(state.familySubtab==='Mafia Family'&&mafiaTreeDrag&&mafiaTreeDrag.moved){setTimeout(function(){mafiaTreeDrag.moved=false;},80);return;}if(state.familySubtab==='Blood Family'&&(e.target.closest('.tree-person')||e.target.closest('.family-popover')||e.target.closest('.opinion-tooltip')))return;if(state.familySubtab==='Mafia Family'&&(e.target.closest('.mafia-person')||e.target.closest('.family-popover')||e.target.closest('.opinion-tooltip')))return;state.selectedFamilyProfile='player';render();});
 document.addEventListener('contextmenu',function(e){e.preventDefault();if(state.tab==='Family'&&state.selectedFamilyProfile&&state.selectedFamilyProfile!=='player'){state.selectedFamilyProfile='player';render();return;}if(state.mapMode==='district'||state.tab==='District'){backFromDistrict(e);return;}if(state.tab&&state.tab!=='Dashboard'){state.tab=state.tab==='Family'?'City':'Dashboard';render();}});
+document.addEventListener('keydown',function(e){
+  if(e.defaultPrevented)return;
+  if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName||''))return;
+  var key=String(e.key||'').toLowerCase(),step=e.shiftKey?18:9,handled=false;
+  if(key==='w'||key==='arrowup')handled=moveDistrictWalker(0,-step);
+  else if(key==='s'||key==='arrowdown')handled=moveDistrictWalker(0,step);
+  else if(key==='a'||key==='arrowleft')handled=moveDistrictWalker(-step,0);
+  else if(key==='d'||key==='arrowright')handled=moveDistrictWalker(step,0);
+  if(handled)e.preventDefault();
+});
 function creatorTooltip(){var t=document.getElementById('creator-tooltip');if(!t){t=document.createElement('div');t.id='creator-tooltip';t.className='creator-tooltip';document.body.appendChild(t);}return t;}
 function showCreatorTooltip(el,e){var t=creatorTooltip(),cat=el.getAttribute('data-tip-cat')||'Info',name=el.getAttribute('data-tip-name')||'',quote=el.getAttribute('data-tip-quote')||'',effects=(el.getAttribute('data-tip-effects')||'').split('|').filter(Boolean);t.innerHTML='<span class="tip-cat tip-cat-'+cat.toLowerCase().replace(/[^a-z]+/g,'-')+'">'+esc(cat)+'</span><b>'+esc(name)+'</b>'+(quote?'<em>"'+esc(quote)+'"</em>':'')+effects.map(function(row){var cls=row.indexOf('---')>=0||row.indexOf('--')>=0||/ -$/.test(row)?'neg':row.indexOf('+++')>=0||row.indexOf('++')>=0||row.indexOf('+')>=0?'pos':'muted';return'<span class="'+cls+'">'+esc(row)+'</span>';}).join('');t.classList.add('visible');moveCreatorTooltip(e);}
 function moveCreatorTooltip(e){var t=document.getElementById('creator-tooltip');if(!t||!t.classList.contains('visible')||!e)return;var x=e.clientX+16,y=e.clientY+16,w=t.offsetWidth||320,h=t.offsetHeight||160;if(x+w>window.innerWidth-12)x=e.clientX-w-16;if(y+h>window.innerHeight-12)y=e.clientY-h-16;t.style.left=Math.max(8,x)+'px';t.style.top=Math.max(8,y)+'px';}
