@@ -3,6 +3,30 @@ import { mergeGeometries } from '/node_modules/three/examples/jsm/utils/BufferGe
 import { FontLoader } from '/node_modules/three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from '/node_modules/three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerBold from '/node_modules/three/examples/fonts/helvetiker_bold.typeface.json';
+import { disposeObject } from './district3d/core/disposal.js';
+import { buildingProfilesFor, colorByCategory, profileForSubtype, typeForCategory } from './district3d/core/building-profiles.js';
+import { lightingAtPhase, lightingForPayload, lightingForPeriod, periodIndex } from './district3d/core/lighting.js';
+import {
+  cleanWorldPoly,
+  clipPolyHalfPlane,
+  clipPolygonToPolygon,
+  clipPolygonToRect,
+  hashNumber,
+  makeCuts,
+  pointInPoly,
+  rectPoly,
+  rotateForGenerationPoint,
+  seeded3d,
+  sourcePoint,
+  transformBlock,
+  transformBlockAffine,
+  transformPolygon,
+  transformPolyAffine,
+  transformRoad,
+  transformRoadAffine,
+  unrotateGeneratedPoint,
+  worldPoint,
+} from './district3d/core/geometry.js';
 
 const mounted = new Map();
 const savedViews = new Map();
@@ -12,41 +36,6 @@ const FLOOR_HEIGHT = 2.35;
 const HEIGHT_SCALE = 0.33;
 const INFO_AREA_SCALE = 13;
 const ICON_FONT = new FontLoader().parse(helvetikerBold);
-const colorByCategory = {
-  Residential: { wall: 0xbfa77d, roof: 0x6f5a45 },
-  Commercial: { wall: 0x9fb1bd, roof: 0x4c5d69 },
-  Industrial: { wall: 0x5e6264, roof: 0x303436 },
-  Civic: { wall: 0xd3d0c1, roof: 0x817d70 },
-  Criminal: { wall: 0x603636, roof: 0x242426 },
-};
-const parcelBuildingDb = [
-  { category: 'Residential', subtype: 'Small House', min: 80, max: 250, floors: [1, 2], height: [3, 6], footprint: [0.5, 0.8] },
-  { category: 'Residential', subtype: 'Duplex', min: 150, max: 400, floors: [2, 3], height: [6, 9], footprint: [0.6, 0.85] },
-  { category: 'Residential', subtype: 'Apartment Building', min: 300, max: 1200, floors: [3, 8], height: [9, 24], footprint: [0.6, 0.9] },
-  { category: 'Residential', subtype: 'Luxury Condo', min: 500, max: 2500, floors: [5, 15], height: [15, 45], footprint: [0.4, 0.7] },
-  { category: 'Residential', subtype: 'Mansion', min: 1000, max: 6000, floors: [1, 3], height: [3, 12], footprint: [0.2, 0.5] },
-  { category: 'Commercial', subtype: 'Corner Shop', min: 80, max: 300, floors: [1, 2], height: [3, 8], footprint: [0.7, 0.95] },
-  { category: 'Commercial', subtype: 'Restaurant', min: 150, max: 600, floors: [1, 3], height: [3, 12], footprint: [0.6, 0.9] },
-  { category: 'Commercial', subtype: 'Bar / Club', min: 200, max: 1000, floors: [1, 3], height: [4, 12], footprint: [0.7, 0.95] },
-  { category: 'Commercial', subtype: 'Office Building', min: 400, max: 3000, floors: [4, 15], height: [12, 45], footprint: [0.5, 0.85] },
-  { category: 'Commercial', subtype: 'Shopping Center', min: 3000, max: 15000, floors: [1, 4], height: [5, 20], footprint: [0.7, 0.95] },
-  { category: 'Commercial', subtype: 'Hotel', min: 1000, max: 5000, floors: [5, 20], height: [15, 60], footprint: [0.5, 0.85] },
-  { category: 'Industrial', subtype: 'Workshop', min: 300, max: 1500, floors: [1, 2], height: [4, 8], footprint: [0.7, 0.95] },
-  { category: 'Industrial', subtype: 'Warehouse', min: 1000, max: 10000, floors: [1, 2], height: [5, 12], footprint: [0.8, 0.95] },
-  { category: 'Industrial', subtype: 'Factory', min: 2000, max: 30000, floors: [1, 5], height: [5, 25], footprint: [0.6, 0.9] },
-  { category: 'Industrial', subtype: 'Heavy Industry', min: 5000, max: 100000, floors: [1, 6], height: [8, 40], footprint: [0.5, 0.85] },
-  { category: 'Civic', subtype: 'Clinic', min: 300, max: 2000, floors: [1, 4], height: [3, 15], footprint: [0.5, 0.8] },
-  { category: 'Civic', subtype: 'School', min: 1000, max: 10000, floors: [1, 4], height: [4, 16], footprint: [0.3, 0.7] },
-  { category: 'Civic', subtype: 'Police Station', min: 500, max: 5000, floors: [2, 5], height: [6, 20], footprint: [0.4, 0.8] },
-  { category: 'Civic', subtype: 'Courthouse', min: 1000, max: 8000, floors: [2, 6], height: [8, 25], footprint: [0.3, 0.7] },
-  { category: 'Civic', subtype: 'Bank Branch', min: 300, max: 2000, floors: [1, 4], height: [4, 16], footprint: [0.5, 0.9] },
-  { category: 'Civic', subtype: 'Hospital', min: 2000, max: 20000, floors: [3, 12], height: [12, 50], footprint: [0.4, 0.8] },
-  { category: 'Criminal', subtype: 'Safehouse', min: 80, max: 400, floors: [1, 3], height: [3, 10], footprint: [0.5, 0.8] },
-  { category: 'Criminal', subtype: 'Drug House', min: 80, max: 300, floors: [1, 2], height: [3, 8], footprint: [0.6, 0.9] },
-  { category: 'Criminal', subtype: 'Gambling Den', min: 200, max: 1200, floors: [1, 4], height: [4, 15], footprint: [0.6, 0.95] },
-  { category: 'Criminal', subtype: 'Crew HQ', min: 300, max: 3000, floors: [2, 8], height: [8, 30], footprint: [0.5, 0.85] },
-  { category: 'Criminal', subtype: 'Major Syndicate HQ', min: 1000, max: 10000, floors: [5, 20], height: [15, 70], footprint: [0.4, 0.8] },
-];
 const emptyDebug = {
   boundary: true,
   parcelOutlines: true,
@@ -57,79 +46,12 @@ const emptyDebug = {
   exactExtrusion: true,
 };
 
-function lerpValue(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function lerpColor(a, b, t) {
-  const ca = new THREE.Color(a);
-  const cb = new THREE.Color(b);
-  return ca.lerp(cb, t);
-}
-
-function lightingAtPhase(phase) {
-  const p = ((phase % 1) + 1) % 1;
-  const stops = [
-    { p: 0, bg: 0x05070b, ambientColor: 0x6f7fa4, ambient: 0.34, sunColor: 0x7186b5, sun: 0.08, sunPos: [-6, 5, -12] },
-    { p: 0.208, bg: 0x070a10, ambientColor: 0x8996ae, ambient: 0.44, sunColor: 0xa8a0bd, sun: 0.16, sunPos: [18, 6, -10] },
-    { p: 0.25, bg: 0x12100d, ambientColor: 0xe5b985, ambient: 0.78, sunColor: 0xffb061, sun: 0.72, sunPos: [18, 9, -5] },
-    { p: 0.333, bg: 0x111512, ambientColor: 0xe8e1c8, ambient: 1.02, sunColor: 0xffdf9a, sun: 1.05, sunPos: [15, 17, 8] },
-    { p: 0.5, bg: 0x121613, ambientColor: 0xf3edd6, ambient: 1.16, sunColor: 0xfff0c8, sun: 1.34, sunPos: [3, 25, 18] },
-    { p: 0.708, bg: 0x15110e, ambientColor: 0xd6ae83, ambient: 0.86, sunColor: 0xffbf72, sun: 0.86, sunPos: [-15, 12, 8] },
-    { p: 0.792, bg: 0x090b10, ambientColor: 0x8fa0c0, ambient: 0.48, sunColor: 0xb08ccc, sun: 0.24, sunPos: [-18, 6, -6] },
-    { p: 0.875, bg: 0x05070b, ambientColor: 0x6f7fa4, ambient: 0.34, sunColor: 0x7186b5, sun: 0.08, sunPos: [-8, 5, -12] },
-    { p: 1, bg: 0x05070b, ambientColor: 0x6f7fa4, ambient: 0.34, sunColor: 0x7186b5, sun: 0.08, sunPos: [-6, 5, -12] },
-  ];
-  let a = stops[0];
-  let b = stops[1];
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    if (p >= stops[i].p && p <= stops[i + 1].p) {
-      a = stops[i];
-      b = stops[i + 1];
-      break;
-    }
-  }
-  const t = (p - a.p) / Math.max(0.001, b.p - a.p);
-  return {
-    bg: lerpColor(a.bg, b.bg, t),
-    ambientColor: lerpColor(a.ambientColor, b.ambientColor, t),
-    ambient: lerpValue(a.ambient, b.ambient, t),
-    sunColor: lerpColor(a.sunColor, b.sunColor, t),
-    sun: lerpValue(a.sun, b.sun, t),
-    sunPos: a.sunPos.map((v, i) => lerpValue(v, b.sunPos[i], t)),
-    nightMix: p >= 0.875 || p < 0.208 ? 1 : p >= 0.792 ? (p - 0.792) / 0.083 : p < 0.25 ? (0.25 - p) / 0.042 : 0,
-  };
-}
-
-function periodIndex(period) {
-  const names = ['morning', 'afternoon', 'evening', 'night'];
-  return Math.max(0, names.indexOf(String(period || 'Morning').toLowerCase()));
-}
-
-function lightingForPeriod(period) {
-  return lightingAtPhase(periodIndex(period) / 4);
-}
-
-function lightingForPayload(payload) {
-  if (Number.isFinite(Number(payload?.timeMinuteOfDay))) return lightingAtPhase(Number(payload.timeMinuteOfDay) / 1440);
-  return lightingForPeriod(payload?.timePeriod);
-}
-
-function disposeObject(obj) {
-  obj.traverse((child) => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-      else child.material.dispose();
-    }
-  });
-}
-
 function cleanup(root) {
   const entry = mounted.get(root);
   if (!entry) return;
   window.removeEventListener('resize', entry.onResize);
   root.removeEventListener('wheel', entry.onWheel);
+  if (entry.wheelPanel) entry.wheelPanel.removeEventListener('wheel', entry.onWheel);
   root.removeEventListener('pointerdown', entry.onPointerDown);
   root.removeEventListener('pointermove', entry.onPointerMove);
   root.removeEventListener('pointerup', entry.onPointerUp);
@@ -144,196 +66,6 @@ function cleanup(root) {
   entry.renderer.dispose();
   root.innerHTML = '';
   mounted.delete(root);
-}
-
-function hashNumber(text) {
-  let h = 2166136261;
-  for (let i = 0; i < String(text).length; i += 1) {
-    h ^= String(text).charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) / 4294967295;
-}
-
-function worldPoint(p, center, scale) {
-  return new THREE.Vector2((p.x - center.x) * scale, (p.y - center.y) * scale);
-}
-
-function sourcePoint(p, center, scale) {
-  return { x: p.x / scale + center.x, y: p.y / scale + center.y };
-}
-
-function pointInPoly(point, poly) {
-  if (!poly || poly.length < 3) return false;
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
-    const xi = poly[i].x;
-    const yi = poly[i].y;
-    const xj = poly[j].x;
-    const yj = poly[j].y;
-    const crosses = ((yi > point.y) !== (yj > point.y)) && point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 0.000001) + xi;
-    if (crosses) inside = !inside;
-  }
-  return inside;
-}
-
-function rectPoly(minX, minY, maxX, maxY) {
-  return [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
-}
-
-function clipPolyHalfPlane(poly, inside, intersect) {
-  const out = [];
-  if (!poly || !poly.length) return out;
-  for (let i = 0; i < poly.length; i += 1) {
-    const cur = poly[i];
-    const prev = poly[(i + poly.length - 1) % poly.length];
-    const ci = inside(cur);
-    const pi = inside(prev);
-    if (ci !== pi) out.push(intersect(prev, cur));
-    if (ci) out.push(cur);
-  }
-  return cleanWorldPoly(out);
-}
-
-function cleanWorldPoly(poly) {
-  const out = [];
-  (poly || []).forEach((p) => {
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
-    const last = out[out.length - 1];
-    if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 0.05) out.push({ x: p.x, y: p.y });
-  });
-  if (out.length > 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < 0.05) out.pop();
-  return out;
-}
-
-function rotateForGenerationPoint(p, pivot) {
-  return { x: pivot.x + (p.y - pivot.y), y: pivot.y - (p.x - pivot.x) };
-}
-
-function unrotateGeneratedPoint(p, pivot) {
-  return { x: pivot.x - (p.y - pivot.y), y: pivot.y + (p.x - pivot.x) };
-}
-
-function transformPolygon(poly, transform, pivot) {
-  return cleanWorldPoly((poly || []).map((p) => transform(p, pivot)));
-}
-
-function transformRoad(road, transform, pivot) {
-  const a = transform(road.a, pivot);
-  const b = transform(road.b, pivot);
-  return Object.assign({}, road, { a, b, centerline: [a, b] });
-}
-
-function transformParcel(parcel, transform, pivot) {
-  return Object.assign({}, parcel, {
-    polygon: transformPolygon(parcel.polygon, transform, pivot),
-    buildingPolygon: parcel.buildingPolygon ? transformPolygon(parcel.buildingPolygon, transform, pivot) : parcel.buildingPolygon,
-  });
-}
-
-function transformBlock(block, transform, pivot) {
-  const polygon = transformPolygon(block.polygon, transform, pivot);
-  return Object.assign({}, block, {
-    polygon,
-    area: areaFromPoly(polygon),
-    parcels: (block.parcels || []).map((parcel) => transformParcel(parcel, transform, pivot)),
-  });
-}
-
-function transformPointAffine(p, affine) {
-  const s = affine?.scale || 1;
-  return { x: p.x * s + (affine?.tx || 0), y: p.y * s + (affine?.ty || 0) };
-}
-
-function transformPolyAffine(poly, affine) {
-  return cleanWorldPoly((poly || []).map((p) => transformPointAffine(p, affine)));
-}
-
-function transformRoadAffine(road, affine) {
-  const a = transformPointAffine(road.a, affine);
-  const b = transformPointAffine(road.b, affine);
-  return Object.assign({}, road, { a, b, centerline: [a, b] });
-}
-
-function transformParcelAffine(parcel, affine) {
-  return Object.assign({}, parcel, {
-    polygon: transformPolyAffine(parcel.polygon, affine),
-    buildingPolygon: parcel.buildingPolygon ? transformPolyAffine(parcel.buildingPolygon, affine) : parcel.buildingPolygon,
-  });
-}
-
-function transformBlockAffine(block, affine) {
-  const polygon = transformPolyAffine(block.polygon, affine);
-  return Object.assign({}, block, {
-    polygon,
-    area: areaFromPoly(polygon),
-    parcels: (block.parcels || []).map((parcel) => transformParcelAffine(parcel, affine)),
-  });
-}
-
-function clipPolygonToRect(poly, minX, minY, maxX, maxY) {
-  let p = poly || [];
-  p = clipPolyHalfPlane(p, (q) => q.x >= minX, (a, b) => {
-    const t = (minX - a.x) / ((b.x - a.x) || 0.000001);
-    return { x: minX, y: a.y + (b.y - a.y) * t };
-  });
-  p = clipPolyHalfPlane(p, (q) => q.x <= maxX, (a, b) => {
-    const t = (maxX - a.x) / ((b.x - a.x) || 0.000001);
-    return { x: maxX, y: a.y + (b.y - a.y) * t };
-  });
-  p = clipPolyHalfPlane(p, (q) => q.y >= minY, (a, b) => {
-    const t = (minY - a.y) / ((b.y - a.y) || 0.000001);
-    return { x: a.x + (b.x - a.x) * t, y: minY };
-  });
-  p = clipPolyHalfPlane(p, (q) => q.y <= maxY, (a, b) => {
-    const t = (maxY - a.y) / ((b.y - a.y) || 0.000001);
-    return { x: a.x + (b.x - a.x) * t, y: maxY };
-  });
-  return cleanWorldPoly(p);
-}
-
-function clipPolygonToPolygon(subject, clipper) {
-  let out = cleanWorldPoly(subject);
-  if (!out.length || !clipper || clipper.length < 3) return [];
-  const signedArea = clipper.reduce((sum, a, i) => {
-    const b = clipper[(i + 1) % clipper.length];
-    return sum + (a.x * b.y - b.x * a.y);
-  }, 0);
-  const keepLeft = signedArea >= 0;
-  for (let i = 0; i < clipper.length; i += 1) {
-    const a = clipper[i];
-    const b = clipper[(i + 1) % clipper.length];
-    const inside = (p) => {
-      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-      return keepLeft ? cross >= -0.001 : cross <= 0.001;
-    };
-    const intersect = (p, q) => {
-      const rx = q.x - p.x;
-      const ry = q.y - p.y;
-      const sx = b.x - a.x;
-      const sy = b.y - a.y;
-      const denom = rx * sy - ry * sx || 0.000001;
-      const t = ((a.x - p.x) * sy - (a.y - p.y) * sx) / denom;
-      return { x: p.x + rx * t, y: p.y + ry * t };
-    };
-    out = clipPolyHalfPlane(out, inside, intersect);
-    if (out.length < 3) return [];
-  }
-  return cleanWorldPoly(out);
-}
-
-function makeCuts(min, max, count, rand) {
-  const span = max - min;
-  const weights = Array.from({ length: count }, () => 0.75 + rand() * 0.65);
-  const total = weights.reduce((s, v) => s + v, 0);
-  const cuts = [min];
-  let cursor = min;
-  weights.forEach((w) => {
-    cursor += span * w / total;
-    cuts.push(cursor);
-  });
-  cuts[cuts.length - 1] = max;
-  return cuts;
 }
 
 function chooseStyle(payload) {
@@ -380,47 +112,6 @@ function cleanRectBlockScore(poly) {
   });
   if (!axisAligned || fill < 0.985 || aspect < 0.55) return null;
   return { width, depth, aspect, fill };
-}
-
-function buildingProfilesFor(category, parcelArea, style) {
-  const exact = parcelBuildingDb.filter((p) => p.category === category && parcelArea >= p.min && parcelArea <= p.max);
-  const densityTallOk = style === 'DOWNTOWN' || style === 'NIGHTLIFE';
-  const filteredExact = exact.filter((p) => densityTallOk || p.floors[1] <= 8);
-  if (filteredExact.length) return filteredExact;
-  if (exact.length) return exact;
-  const sameCategory = parcelBuildingDb.filter((p) => p.category === category);
-  if (!sameCategory.length) return parcelBuildingDb.filter((p) => p.category === 'Commercial');
-  return sameCategory
-    .slice()
-    .sort((a, b) => Math.min(Math.abs(parcelArea - a.min), Math.abs(parcelArea - a.max)) - Math.min(Math.abs(parcelArea - b.min), Math.abs(parcelArea - b.max)))
-    .slice(0, 3);
-}
-
-function profileForSubtype(category, subtype) {
-  return parcelBuildingDb.find((p) => p.category === category && p.subtype === subtype)
-    || parcelBuildingDb.find((p) => p.subtype === subtype)
-    || null;
-}
-
-function typeForCategory(category, rand, parcelArea, style) {
-  if (category === 'Criminal') category = 'Commercial';
-  const list = buildingProfilesFor(category, parcelArea, style);
-  return list[Math.floor(rand() * list.length)];
-}
-
-function seeded3d(seed) {
-  let h = 2166136261;
-  String(seed || 'district').split('').forEach((ch) => {
-    h ^= ch.charCodeAt(0);
-    h = Math.imul(h, 16777619);
-  });
-  return () => {
-    h += 0x6D2B79F5;
-    let t = h;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 function lineSegmentsInsidePolygon(a, b, poly, segments = 96) {
@@ -732,6 +423,62 @@ function splitBlockIntoRoadFacingParcels(block, category, districtPoly, roads, c
   return parcels;
 }
 
+function sanitizeSceneParcel(parcel) {
+  if (!parcel) return parcel;
+  if (parcel.category === 'Criminal') {
+    parcel.category = 'Commercial';
+    parcel.subtype = /Safehouse|Drug House|Gambling Den|Crew HQ|Major Syndicate HQ|Underground Casino/i.test(String(parcel.subtype || '')) ? 'Bar' : (parcel.subtype || 'Bar');
+    parcel.kind = parcel.subtype;
+    parcel.sector = parcel.sector === 'Command' || parcel.sector === 'Street Distribution' || parcel.sector === 'Gambling Operations' || parcel.sector === 'Operational Support' ? 'Nightlife' : (parcel.sector || 'Commercial');
+    parcel.legality = parcel.legality === 'Illegal' || parcel.legality === 'Hidden Illegal' ? 'Gray' : (parcel.legality || 'Gray');
+    parcel.ownershipType = parcel.ownershipType === 'Independent Criminal' ? 'Private Business' : (parcel.ownershipType || 'Private Business');
+    parcel.defaultFactionControl = parcel.defaultFactionControl === 'independent_criminal' ? 'neutral' : (parcel.defaultFactionControl || 'neutral');
+    parcel.occupiedBy = parcel.occupiedBy === 'independent_criminal' ? 'neutral' : (parcel.occupiedBy || 'neutral');
+    parcel.isSafehouse = false;
+    parcel.hasHiddenOperation = false;
+    parcel.hiddenOperationType = '';
+    if (!parcel.displayName || /Safehouse|Drug House|Gambling Den|Crew HQ|Major Syndicate HQ|Underground Casino/i.test(String(parcel.displayName))) parcel.displayName = parcel.businessName || parcel.locationName || parcel.subtype;
+    if (!parcel.label || /Safehouse|Drug House|Gambling Den|Crew HQ|Major Syndicate HQ|Underground Casino/i.test(String(parcel.label))) parcel.label = parcel.displayName;
+  }
+  return parcel;
+}
+
+function applyPayloadParcelIdentities(blocks, payload, rotateVertical, pivot) {
+  const sourceParcels = (payload.blocks || [])
+    .flatMap((block) => block.parcels || [])
+    .filter((parcel) => parcel?.id && parcel.polygon?.length)
+    .map((parcel) => {
+      const polygon = rotateVertical ? transformPolygon(parcel.polygon || [], rotateForGenerationPoint, pivot) : cleanWorldPoly(parcel.polygon || []);
+      return { parcel, polygon, center: centroid(polygon), used: false };
+    });
+  if (!sourceParcels.length) return;
+  const generatedParcels = blocks.flatMap((block) => (block.parcels || []).map((parcel) => ({ block, parcel, center: centroid(parcel.polygon || []) })));
+  generatedParcels.forEach((entry) => {
+    let best = null;
+    sourceParcels.forEach((source) => {
+      if (source.used) return;
+      const categoryPenalty = String(source.parcel.category || '') === String(entry.parcel.category || '') ? 0 : 160;
+      const subtypePenalty = String(source.parcel.subtype || '') === String(entry.parcel.subtype || '') ? 0 : 30;
+      const score = Math.hypot(entry.center.x - source.center.x, entry.center.y - source.center.y) + categoryPenalty + subtypePenalty;
+      if (!best || score < best.score) best = { source, score };
+    });
+    if (!best?.source || best.score > 260) return;
+    best.source.used = true;
+    const source = best.source.parcel;
+    const generatedPolygon = entry.parcel.polygon;
+    const generatedBuildingPolygon = entry.parcel.buildingPolygon;
+    Object.assign(entry.parcel, source, {
+      id: source.id,
+      blockId: entry.block.id,
+      polygon: generatedPolygon,
+      buildingPolygon: generatedBuildingPolygon || generatedPolygon,
+      displayName: source.mainBuildingName || source.displayName || source.businessName || source.locationName || source.label || entry.parcel.displayName,
+      label: source.mainBuildingName || source.displayName || source.businessName || source.locationName || source.label || entry.parcel.label,
+      mainBuildingName: source.mainBuildingName || source.displayName || source.businessName || source.locationName || source.label || entry.parcel.displayName,
+    });
+  });
+}
+
 function generate3dDistrict(payload) {
   const sourcePoly = cleanWorldPoly(payload.outerPolygon || []);
   const sourceBounds = bounds(sourcePoly);
@@ -775,12 +522,20 @@ function generate3dDistrict(payload) {
       const blockId = `b${blocks.length}`;
       const category = chooseBlockCategory(cfg, payload.district, rand);
       const block = { id: blockId, label: `Block ${String.fromCharCode(65 + (blocks.length % 26))}`, polygon: poly, area: areaFromPoly(poly), roadAccess: true, density: cfg.parcels, wealth: payload.district?.wealth || 45, crime: payload.district?.corruption || 45, dominantCategory: category, developmentStyle: style, parcels: [] };
-      block.parcels = splitBlockIntoRoadFacingParcels(block, category, districtPoly, roads, cfg, style, payload.district, rand);
+      block.parcels = splitBlockIntoRoadFacingParcels(block, category === 'Criminal' ? 'Commercial' : category, districtPoly, roads, cfg, style, payload.district, rand).map(sanitizeSceneParcel);
       if (block.parcels.length) blocks.push(block);
     }
   }
   const payloadEstate = (payload.blocks || []).flatMap((block) => block.parcels || []).find((parcel) => parcel?.isFamilyEstate);
   if (payloadEstate) {
+    blocks.forEach((block) => (block.parcels || []).forEach((parcel) => {
+      parcel.isFamilyEstate = false;
+      if (parcel.subtype === 'Family Estate') parcel.subtype = 'Residence';
+      if (parcel.label === 'Family Estate' || parcel.displayName === 'Family Estate') {
+        parcel.label = parcel.businessName || parcel.locationName || 'Residence';
+        parcel.displayName = parcel.label;
+      }
+    }));
     const estatePoly = rotateVertical ? transformPolygon(payloadEstate.polygon || [], rotateForGenerationPoint, pivot) : cleanWorldPoly(payloadEstate.polygon || []);
     const estateCenter = centroid(estatePoly);
     let best = null;
@@ -816,6 +571,13 @@ function generate3dDistrict(payload) {
     }
   }
   if (!payload.playerSafehouse || payload.playerSafehouse.districtId === payload.district?.id) {
+    blocks.forEach((block) => (block.parcels || []).forEach((parcel) => {
+      parcel.isPlayerSafehouse = false;
+      if (parcel.label === 'Starting Safehouse' || parcel.displayName === 'Starting Safehouse') {
+        parcel.label = parcel.businessName || parcel.locationName || parcel.subtype || 'Residence';
+        parcel.displayName = parcel.label;
+      }
+    }));
     const candidates = [];
     const fallbacks = [];
     const anyBuildable = [];
@@ -878,6 +640,7 @@ function generate3dDistrict(payload) {
       }
     });
   }
+  applyPayloadParcelIdentities(blocks, payload, rotateVertical, pivot);
   const outputPoly = rotateVertical ? sourcePoly : districtPoly;
   const outputRoads = rotateVertical ? roads.map((road) => transformRoad(road, unrotateGeneratedPoint, pivot)) : roads;
   const outputBlocks = rotateVertical ? blocks.map((block) => transformBlock(block, unrotateGeneratedPoint, pivot)) : blocks;
@@ -2532,6 +2295,70 @@ function pointAlongPath(path, t) {
   return path[path.length - 1];
 }
 
+function partialPathUntil(path, t) {
+  if (!path || path.length < 2) return path ? path.slice(0, 1) : [];
+  const clamped = Math.max(0, Math.min(1, t));
+  if (clamped <= 0.001) return [path[0]];
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const len = Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
+    lengths.push(len);
+    total += len;
+  }
+  let remaining = total * clamped;
+  const out = [path[0]];
+  for (let i = 0; i < lengths.length; i += 1) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (remaining >= lengths[i]) {
+      out.push(b);
+      remaining -= lengths[i];
+      continue;
+    }
+    const local = lengths[i] ? remaining / lengths[i] : 0;
+    out.push({ x: a.x + (b.x - a.x) * local, z: a.z + (b.z - a.z) * local });
+    break;
+  }
+  return out.filter((p, index, arr) => index === 0 || Math.hypot(p.x - arr[index - 1].x, p.z - arr[index - 1].z) > 0.035);
+}
+
+function routePointForBuilding(building, nav) {
+  if (!building) return null;
+  if (building.entryPoint) return building.entryPoint;
+  const world = building.worldFootprint || [];
+  if (!world.length) return building.center || null;
+  const candidates = [];
+  world.forEach((p, index) => {
+    const next = world[(index + 1) % world.length];
+    candidates.push({ x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 });
+  });
+  if (!candidates.length) return building.center || null;
+  let best = candidates[0];
+  let bestDistance = Infinity;
+  const nodes = nav?.nodes || [];
+  candidates.forEach((candidate) => {
+    let distance = Infinity;
+    nodes.forEach((node) => { distance = Math.min(distance, Math.hypot(candidate.x - node.x, candidate.y - node.z)); });
+    if (!nodes.length && building.center) distance = Math.hypot(candidate.x - building.center.x, candidate.y - building.center.y);
+    if (distance < bestDistance) { best = candidate; bestDistance = distance; }
+  });
+  building.entryPoint = best;
+  return best;
+}
+
+function sidewalkPath(path, side = 1, amount = 0.23) {
+  if (!path || path.length < 2) return path || [];
+  return path.map((point, index) => {
+    const prev = path[Math.max(0, index - 1)];
+    const next = path[Math.min(path.length - 1, index + 1)];
+    const dx = next.x - prev.x;
+    const dz = next.z - prev.z;
+    const len = Math.max(0.001, Math.hypot(dx, dz));
+    return { x: point.x + (-dz / len) * amount * side, z: point.z + (dx / len) * amount * side };
+  });
+}
+
 function clearRouteVisual(group) {
   if (!group) return;
   while (group.children.length) {
@@ -2590,11 +2417,13 @@ function updateQueuedRouteObject(entry, pawn, buildingMap) {
   clearRouteVisual(entry.queuedRouteGroup);
   if (!pawn?.visible || !stops.length) return;
   let startBuilding = buildingMap.get(pawn.targetParcelId) || buildingMap.get(pawn.parcelId);
-  let start = startBuilding?.center ? { x: startBuilding.center.x, z: startBuilding.center.y } : null;
+  let startPoint = routePointForBuilding(startBuilding, entry.roadNav);
+  let start = startPoint ? { x: startPoint.x, z: startPoint.y } : null;
   stops.forEach((stop, index) => {
     const destination = buildingMap.get(stop.parcelId);
-    if (!start || !destination?.center) return;
-    const end = { x: destination.center.x, z: destination.center.y };
+    const destinationPoint = routePointForBuilding(destination, entry.roadNav);
+    if (!start || !destinationPoint) return;
+    const end = { x: destinationPoint.x, z: destinationPoint.y };
     const path = shortestPawnRoadPath(entry.roadNav, start, end);
     const segment = new THREE.Group();
     segment.userData.queuedSegment = true;
@@ -2616,7 +2445,9 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
   }
   const from = buildingMap.get(pawn.parcelId);
   const target = pawn.targetParcelId ? buildingMap.get(pawn.targetParcelId) : null;
-  const base = from || target;
+  const hasLastPosition = !!entry.playerPawn.userData.hasPosition && Number.isFinite(entry.playerPawn.position.x) && Number.isFinite(entry.playerPawn.position.z);
+  const spawnFallback = target && entry.roadSpawn ? { center: { x: entry.roadSpawn.x, y: entry.roadSpawn.y } } : null;
+  const base = from || (target && hasLastPosition ? { center: { x: entry.playerPawn.position.x, y: entry.playerPawn.position.z } } : spawnFallback || target);
   if (!base) {
     entry.playerPawn.visible = false;
     if (entry.playerRoute) entry.playerRoute.visible = false;
@@ -2625,30 +2456,44 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
   }
   entry.playerPawn.visible = true;
   if (entry.queuedRouteGroup) entry.queuedRouteGroup.visible = true;
-  const a = from?.center || target.center;
-  const b = target?.center || a;
-  const logicalRouteKey = target && from ? `${pawn.parcelId || ''}:${pawn.targetParcelId || ''}:${pawn.routeId || ''}` : '';
+  const fallbackFrom = target && hasLastPosition ? { center: { x: entry.playerPawn.position.x, y: entry.playerPawn.position.z } } : spawnFallback;
+  const routeFrom = from || fallbackFrom;
+  const routeFromPoint = routePointForBuilding(routeFrom, entry.roadNav) || routeFrom?.center;
+  const targetPoint = routePointForBuilding(target, entry.roadNav) || target?.center || routeFromPoint;
+  const a = routeFromPoint || targetPoint;
+  const b = targetPoint || a;
+  const logicalRouteKey = target && routeFrom ? `${pawn.parcelId || 'visual'}:${pawn.targetParcelId || ''}:${pawn.routeId || ''}` : '';
   if (logicalRouteKey && entry.playerPawn.userData.logicalRouteKey !== logicalRouteKey) {
-    const useCurrent = !!entry.playerPawn.userData.hasPosition && entry.playerPawn.visible;
     entry.playerPawn.userData.logicalRouteKey = logicalRouteKey;
-    entry.playerPawn.userData.routeStart = useCurrent
-      ? { x: entry.playerPawn.position.x, z: entry.playerPawn.position.z }
-      : { x: a.x, z: a.y };
+    entry.playerPawn.userData.routeStart = { x: a.x, z: a.y };
+    entry.playerPawn.userData.visualProgress = Math.max(0, Math.min(1, Number(pawn.progress ?? 0)));
+    entry.playerPawn.userData.progressUpdatedAt = performance.now();
   } else if (!logicalRouteKey) {
     entry.playerPawn.userData.logicalRouteKey = '';
     entry.playerPawn.userData.routeStart = null;
+    entry.playerPawn.userData.visualProgress = null;
   }
-  let t = Math.max(0, Math.min(1, Number(pawn.progress ?? 1)));
-  if (target && from && pawn.timeMoving) {
+  const logicalProgress = Math.max(0, Math.min(1, Number(pawn.progress ?? 1)));
+  let t = logicalProgress;
+  if (target && routeFrom && pawn.timeMoving) {
     const duration = Math.max(1, Number(pawn.moveDurationMinutes || 1));
     const stepMinutes = Math.max(0, Number(pawn.moveStepMinutes || 0));
     const periodMs = Math.max(1, Number(pawn.timePeriodMs || 60000));
-    const startedAt = Number(pawn.timeStepStartedAt || Date.now());
-    const liveStep = Math.min(stepMinutes, Math.max(0, (Date.now() - startedAt) / periodMs) * stepMinutes);
-    t = Math.max(0, Math.min(1, t + liveStep / duration));
+    const now = performance.now();
+    const dt = Math.min(0.08, Math.max(0, (now - Number(entry.playerPawn.userData.progressUpdatedAt || now)) / 1000));
+    entry.playerPawn.userData.progressUpdatedAt = now;
+    const minutesPerSecond = (1000 / periodMs) * stepMinutes;
+    t = Number.isFinite(entry.playerPawn.userData.visualProgress) ? entry.playerPawn.userData.visualProgress : logicalProgress;
+    t += (minutesPerSecond * dt) / duration;
+    if (t < logicalProgress) t += (logicalProgress - t) * Math.min(1, dt * 8);
+    t = Math.max(0, Math.min(1, t));
+    entry.playerPawn.userData.visualProgress = t;
+  } else if (target && routeFrom) {
+    t = Number.isFinite(entry.playerPawn.userData.visualProgress) ? entry.playerPawn.userData.visualProgress : logicalProgress;
+    entry.playerPawn.userData.progressUpdatedAt = performance.now();
   }
-  const startPoint = target && from && entry.playerPawn.userData.routeStart ? entry.playerPawn.userData.routeStart : { x: a.x, z: a.y };
-  const path = target && from ? shortestPawnRoadPath(entry.roadNav, startPoint, { x: b.x, z: b.y }) : [{ x: a.x, z: a.y }];
+  const startPoint = target && routeFrom && entry.playerPawn.userData.routeStart ? entry.playerPawn.userData.routeStart : { x: a.x, z: a.y };
+  const path = target && routeFrom ? shortestPawnRoadPath(entry.roadNav, startPoint, { x: b.x, z: b.y }) : [{ x: a.x, z: a.y }];
   if (logicalRouteKey && entry.playerPawn.userData.reportedRouteKey !== logicalRouteKey) {
     let routeDistance = 0;
     for (let i = 0; i < path.length - 1; i += 1) routeDistance += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
@@ -2658,6 +2503,10 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
   const pos = pointAlongPath(path, t);
   entry.playerPawn.position.set(pos.x, 0.08, pos.z);
   entry.playerPawn.userData.hasPosition = true;
+  if (logicalRouteKey && (!entry.playerPawn.userData.lastProgressReport || performance.now() - entry.playerPawn.userData.lastProgressReport > 120)) {
+    entry.playerPawn.userData.lastProgressReport = performance.now();
+    entry.root?.dispatchEvent(new CustomEvent('deskdon-player-route-progress', { detail: { routeId: pawn.routeId, progress: t }, bubbles: true }));
+  }
   if (pawn.cashFloat && pawn.cashFloat.amount) {
     const age = Date.now() - Number(pawn.cashFloat.startedAt || 0);
     if (age < 1800) {
@@ -2708,7 +2557,7 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
     entry.actionProgress.visible = false;
   }
   if (entry.playerRoute) {
-    entry.playerRoute.visible = !!target && !!from && t < 1;
+    entry.playerRoute.visible = !!target && !!routeFrom && t < 1;
     if (entry.playerRoute.visible) {
       const routeKey = `${pawn.parcelId || ''}:${pawn.targetParcelId || ''}:${path.length}:${path[0]?.x.toFixed(2)},${path[0]?.z.toFixed(2)}:${path[path.length - 1]?.x.toFixed(2)},${path[path.length - 1]?.z.toFixed(2)}`;
       if (entry.playerRoute.userData.routeKey !== routeKey) {
@@ -2821,7 +2670,9 @@ function familyEstateForParcel(parcel, center, scale, materials, rayTargets, bui
   visualProfile.floors = mansionFloors;
   parcel.visualProfile = visualProfile;
   rayTargets.push(mansion, roof, gate, ...wallMeshes);
-  buildingMap.set(parcel.id, { group, mesh: mansion, roofMesh: roof, parcel, width: innerMetrics.width, depth: innerMetrics.depth, height: mansionHeight, exact: true, center: innerCenter, footprint });
+  const estateWorldFootprint = footprint.map((source) => worldPoint(source, center, scale));
+  const estateEntryPoint = { x: driveCenter.x - driveWorld.width / 2, y: driveCenter.y };
+  buildingMap.set(parcel.id, { group, mesh: mansion, roofMesh: roof, parcel, width: innerMetrics.width, depth: innerMetrics.depth, height: mansionHeight, exact: true, center: innerCenter, footprint, worldFootprint: estateWorldFootprint, entryPoint: estateEntryPoint });
   return group;
 }
 
@@ -2873,7 +2724,8 @@ function buildingForParcel(parcel, center, scale, materials, rayTargets, buildin
     if (debug.windows) addFacadeOpenings(group, wp, metrics.width, metrics.depth, height, visualProfile, materials);
     mesh.userData.parcel = parcel;
     rayTargets.push(mesh);
-    buildingMap.set(parcel.id, { group, mesh, roofMesh: mesh, parcel, width: metrics.width, depth: metrics.depth, height, exact: true, center: wp, footprint });
+    const worldFootprint = footprint.map((source) => worldPoint(source, center, scale));
+    buildingMap.set(parcel.id, { group, mesh, roofMesh: mesh, parcel, width: metrics.width, depth: metrics.depth, height, exact: true, center: wp, footprint, worldFootprint });
     return group;
   }
   const b = bounds(footprint);
@@ -3177,18 +3029,18 @@ function missionTargetTexture(name) {
   canvas.width = 360;
   canvas.height = 110;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(12,10,7,.9)';
+  ctx.fillStyle = 'rgba(16,5,5,.92)';
   ctx.fillRect(2, 2, 356, 106);
-  ctx.strokeStyle = '#e4b84e';
+  ctx.strokeStyle = '#e25a4f';
   ctx.lineWidth = 6;
   ctx.strokeRect(4, 4, 352, 102);
-  ctx.fillStyle = '#f1d88b';
+  ctx.fillStyle = '#ffd8d2';
   ctx.font = 'bold 30px Georgia, serif';
   ctx.textAlign = 'center';
   ctx.fillText(name || 'TARGET', 180, 48);
   ctx.font = 'bold 20px Inter, Arial';
-  ctx.fillStyle = '#d7a83d';
-  ctx.fillText('FOLLOW — KEEP YOUR DISTANCE', 180, 82);
+  ctx.fillStyle = '#ff776a';
+  ctx.fillText('FOLLOW', 180, 82);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -3198,23 +3050,32 @@ function createMissionTargetRig(scene) {
   const group = new THREE.Group();
   group.visible = false;
   group.renderOrder = 38;
-  const coat = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.28, 3, 6), new THREE.MeshStandardMaterial({ color: 0x6f552d, roughness: 0.92 }));
-  coat.position.y = 0.38;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 7, 6), new THREE.MeshStandardMaterial({ color: 0xb9835e, roughness: 1 }));
-  head.position.y = 0.72;
-  const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.08, 8), new THREE.MeshStandardMaterial({ color: 0x251f19, roughness: 1 }));
-  hat.position.y = 0.84;
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.24, 0.31, 24), new THREE.MeshBasicMaterial({ color: 0xe8bd51, transparent: true, opacity: 0.86, side: THREE.DoubleSide, depthWrite: false }));
+  const coatMat = new THREE.MeshStandardMaterial({ color: 0x5d3430, roughness: 0.92, depthTest: true, depthWrite: true });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xb9835e, roughness: 1, depthTest: true, depthWrite: true });
+  const hatMat = new THREE.MeshStandardMaterial({ color: 0x251f19, roughness: 1, depthTest: true, depthWrite: true });
+  const coat = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.17, 2, 5), coatMat);
+  coat.position.y = 0.27;
+  coat.renderOrder = 42;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.066, 6, 5), skinMat);
+  head.position.y = 0.48;
+  head.renderOrder = 43;
+  const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.04, 8), hatMat);
+  hat.position.y = 0.58;
+  hat.renderOrder = 44;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.25, 28), new THREE.MeshBasicMaterial({ color: 0xff5a4b, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: true, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.04;
+  ring.renderOrder = 41;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: missionTargetTexture('TARGET'), transparent: true, depthTest: false }));
-  label.scale.set(2.3, 0.7, 1);
-  label.position.y = 1.45;
-  label.renderOrder = 39;
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.1, 3.4, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
-  beacon.position.y = 2.25;
-  const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffcf3f, transparent: true, opacity: 0.9, depthWrite: false }));
+  label.scale.set(1.7, 0.52, 1);
+  label.position.y = 0.95;
+  label.renderOrder = 46;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.2, 3.7, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff4b3f, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  beacon.position.y = 2.05;
+  beacon.renderOrder = 40;
+  const trail = new THREE.Group();
   trail.frustumCulled = false;
+  trail.renderOrder = 39;
   group.add(coat, head, hat, ring, label, beacon);
   group.userData.label = label;
   group.userData.beacon = beacon;
@@ -3228,18 +3089,20 @@ function createMissionTargetRig(scene) {
 function createMissionHighlightRig(scene) {
   const group = new THREE.Group();
   group.visible = false;
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.16, 4.2, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0xffcc42, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide }));
-  beam.position.y = 2.15;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 8.8, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0xffcc42, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+  beam.position.y = 4.4;
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.48, 30), new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.1;
   const footprint = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffc928, transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false }));
   const footprintLine = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffdf62, transparent: true, opacity: 0.98, depthWrite: false }));
-  group.add(beam, ring, footprint, footprintLine);
+  const footprintGlow = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd45a, transparent: true, opacity: 0.66, depthWrite: false }));
+  group.add(beam, ring, footprint, footprintLine, footprintGlow);
   group.userData.beam = beam;
   group.userData.ring = ring;
   group.userData.footprint = footprint;
   group.userData.footprintLine = footprintLine;
+  group.userData.footprintGlow = footprintGlow;
   scene.add(group);
   return group;
 }
@@ -3271,6 +3134,34 @@ function updateMissionHighlightObject(entry, highlight) {
     const outlineGeometry = new THREE.BufferGeometry().setFromPoints(world.map((p) => new THREE.Vector3(p.x - point.x, 0.055, p.y - point.y)));
     rig.userData.footprintLine.geometry.dispose();
     rig.userData.footprintLine.geometry = outlineGeometry;
+    const glowPoints = [];
+    world.forEach((p, index) => {
+      const next = world[(index + 1) % world.length];
+      const x = p.x - point.x;
+      const z = p.y - point.y;
+      const nx = next.x - point.x;
+      const nz = next.y - point.y;
+      glowPoints.push(new THREE.Vector3(x, 0.08, z), new THREE.Vector3(x, 8.4, z));
+      glowPoints.push(new THREE.Vector3(x, 0.12, z), new THREE.Vector3(nx, 0.12, nz));
+      glowPoints.push(new THREE.Vector3(x, 8.4, z), new THREE.Vector3(nx, 8.4, nz));
+    });
+    rig.userData.footprintGlow.geometry.dispose();
+    rig.userData.footprintGlow.geometry = new THREE.BufferGeometry().setFromPoints(glowPoints);
+  }
+  if (destination?.radius) {
+    const scale = Math.max(1.15, Math.min(4.2, destination.radius * 1.45));
+    rig.userData.beam.scale.set(scale, 1, scale);
+    rig.userData.ring.scale.setScalar(Math.max(1.1, Math.min(3.2, destination.radius * 1.25)));
+  }
+  if (destination?.parcel?.id && rig.userData.lastResolvedParcelId !== destination.parcel.id) {
+    rig.userData.lastResolvedParcelId = destination.parcel.id;
+    entry.root.dispatchEvent(new CustomEvent('deskdon-mission-highlight-state', {
+      detail: {
+        resolvedParcelId: destination.parcel.id,
+        name: destination.parcel.mainBuildingName || destination.parcel.displayName || destination.parcel.businessName || destination.parcel.locationName || destination.parcel.label || '',
+      },
+      bubbles: true,
+    }));
   }
   rig.visible = true;
   return true;
@@ -3279,77 +3170,82 @@ function updateMissionHighlightObject(entry, highlight) {
 function updateMissionTargetObject(entry, target, buildingMap) {
   const rig = entry?.missionTarget;
   if (!rig) return false;
-  if (!target?.active) { rig.visible = false; if (rig.userData.trail) rig.userData.trail.visible = !!(target?.inside && rig.userData.trailPoints?.length > 1); return false; }
-  const from = buildingMap.get(target.fromParcelId);
-  const to = buildingMap.get(target.targetParcelId);
-  const fromCenter = from?.center || (target.fromPoint ? worldPoint(target.fromPoint, entry.center, entry.scale) : null);
-  const toCenter = to?.center || (target.toPoint ? worldPoint(target.toPoint, entry.center, entry.scale) : null);
+  if (!target?.active) { rig.visible = false; if (rig.userData.trail) rig.userData.trail.visible = false; return false; }
+  const requestedFromCenter = target.fromPoint ? worldPoint(target.fromPoint, entry.center, entry.scale) : null;
+  const requestedToCenter = target.toPoint ? worldPoint(target.toPoint, entry.center, entry.scale) : null;
+  const nearestBuilding = (point) => {
+    if (!point) return null;
+    let nearest = null;
+    buildingMap.forEach((candidate) => {
+      const distance = Math.hypot(candidate.center.x - point.x, candidate.center.y - point.y);
+      if (!nearest || distance < nearest.distance) nearest = { building: candidate, distance };
+    });
+    return nearest?.building || null;
+  };
+  const from = buildingMap.get(target.fromParcelId) || nearestBuilding(requestedFromCenter);
+  const to = buildingMap.get(target.targetParcelId) || nearestBuilding(requestedToCenter);
+  const fromCenter = routePointForBuilding(from, entry.roadNav) || from?.center || requestedFromCenter;
+  const toCenter = routePointForBuilding(to, entry.roadNav) || to?.center || requestedToCenter;
   if (!fromCenter || !toCenter) { rig.visible = false; return false; }
   const routeKey = `${target.missionId || target.id}:${target.fromParcelId}:${target.targetParcelId}`;
   if (rig.userData.routeKey !== routeKey) {
     rig.userData.routeKey = routeKey;
-    rig.userData.path = shortestPawnRoadPath(entry.roadNav, { x: fromCenter.x, z: fromCenter.y }, { x: toCenter.x, z: toCenter.y });
+    const buildingStart = { x: fromCenter.x, z: fromCenter.y };
+    const buildingEnd = { x: toCenter.x, z: toCenter.y };
+    const roadPath = shortestPawnRoadPath(entry.roadNav, buildingStart, buildingEnd) || [];
+    rig.userData.path = [buildingStart].concat(roadPath).concat([buildingEnd]).filter((p, index, arr) => index === 0 || Math.hypot(p.x - arr[index - 1].x, p.z - arr[index - 1].z) > 0.04);
+    clearRouteVisual(rig.userData.trail);
+    rig.userData.trailProgressKey = '';
+    let routeDistance = 0;
+    for (let i = 0; i < rig.userData.path.length - 1; i += 1) routeDistance += Math.hypot(rig.userData.path[i + 1].x - rig.userData.path[i].x, rig.userData.path[i + 1].z - rig.userData.path[i].z);
+    rig.userData.routeMinutes = Math.max(2, Math.ceil(routeDistance / 1.1));
+    rig.userData.visualProgress = Math.max(0, Math.min(1, Number(target.progress || 0)));
+    rig.userData.progressUpdatedAt = performance.now();
     const oldMap = rig.userData.label?.material?.map;
     if (rig.userData.label) rig.userData.label.material.map = missionTargetTexture(target.name);
     oldMap?.dispose?.();
   }
-  let progress = Math.max(0, Math.min(1, Number(target.progress || 0)));
+  const now = performance.now();
+  const logicalProgress = Math.max(0, Math.min(1, Number(target.progress || 0)));
+  const visualDt = Math.min(0.08, Math.max(0, (now - Number(rig.userData.progressUpdatedAt || now)) / 1000));
+  rig.userData.progressUpdatedAt = now;
+  let progress = Number.isFinite(rig.userData.visualProgress) ? rig.userData.visualProgress : logicalProgress;
   if (entry.root?._deskDonPayload?.timeMoving) {
-    const elapsed = Math.max(0, performance.now() - Number(entry.root._deskDonPayload.timeStepStartedAt || performance.now()));
     const period = Math.max(1, Number(entry.root._deskDonPayload.timePeriodMs || 120));
-    progress = Math.min(1, progress + Math.min(1, elapsed / period) / 35);
+    const stepMinutes = Math.max(1, Number(entry.root._deskDonPayload.timeStepMinutes || 1));
+    const minutesPerSecond = (1000 / period) * stepMinutes;
+    progress += (minutesPerSecond * visualDt) / Math.max(1, Number(rig.userData.routeMinutes || target.legMinutes || 35));
   }
-  const ramp = 0.18;
-  const easedProgress = progress < ramp
-    ? (progress * progress) / (2 * ramp * (1 - ramp / 2))
-    : (progress - ramp / 2) / (1 - ramp / 2);
-  const point = pointAlongPath(rig.userData.path || [], Math.max(0, Math.min(1, easedProgress)));
+  rig.userData.visualProgress = Math.max(0, Math.min(1, progress));
+  progress = rig.userData.visualProgress;
+  const point = pointAlongPath(rig.userData.path || [], Math.max(0, Math.min(1, progress)));
   rig.position.set(point.x, 0.06, point.z);
   rig.visible = true;
-  const trailSession = target.missionId || target.id;
-  if (rig.userData.trailSession !== trailSession) { rig.userData.trailSession = trailSession; rig.userData.trailPoints = []; }
-  const trailPoints = rig.userData.trailPoints;
-  const lastTrail = trailPoints[trailPoints.length - 1];
-  if (!lastTrail || Math.hypot(lastTrail.x - point.x, lastTrail.z - point.z) > 0.09) {
-    trailPoints.push(new THREE.Vector3(point.x, 0.12, point.z));
-    if (trailPoints.length > 260) trailPoints.shift();
-    rig.userData.trail.geometry.dispose();
-    rig.userData.trail.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+  const trailPath = partialPathUntil(rig.userData.path || [], Math.max(0, progress - 0.002));
+  const trailProgressKey = `${rig.userData.routeKey}:${Math.round(progress * 180)}`;
+  if (rig.userData.trailProgressKey !== trailProgressKey) {
+    rig.userData.trailProgressKey = trailProgressKey;
+    buildRouteVisual(rig.userData.trail, trailPath, { color: 0xd34a3e });
   }
-  rig.userData.trail.visible = trailPoints.length > 1;
-  if (entry.playerPawn?.visible && (!rig.userData.lastReport || performance.now() - rig.userData.lastReport > 160)) {
+  rig.userData.trail.visible = trailPath.length > 1;
+  if (!rig.userData.lastReport || performance.now() - rig.userData.lastReport > 160) {
     rig.userData.lastReport = performance.now();
-    entry.root.dispatchEvent(new CustomEvent('deskdon-mission-npc-state', { detail: { id: target.id, distance: rig.position.distanceTo(entry.playerPawn.position), progress }, bubbles: true }));
+    entry.root.dispatchEvent(new CustomEvent('deskdon-mission-npc-state', { detail: { id: target.id, distance: entry.playerPawn?.visible ? rig.position.distanceTo(entry.playerPawn.position) : null, progress, routeMinutes: rig.userData.routeMinutes || 0, resolvedFromParcelId: from?.parcel?.id || '', resolvedTargetParcelId: to?.parcel?.id || '' }, bubbles: true }));
   }
   return true;
 }
 
-function createPopulationRig(scene, agents, blocks, center, scale) {
+function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
   const people = Array.isArray(agents) ? agents.slice(0, 50) : [];
-  const sidewalkSegments = [];
-  (blocks || []).forEach((block) => {
-    const polygon = block?.polygon || [];
-    const worldPolygon = polygon.map((point) => worldPoint(point, center, scale));
-    const blockCenter = worldPolygon.reduce((sum, point) => ({ x: sum.x + point.x / Math.max(1, worldPolygon.length), y: sum.y + point.y / Math.max(1, worldPolygon.length) }), { x: 0, y: 0 });
-    polygon.forEach((point, index) => {
-      const next = polygon[(index + 1) % polygon.length];
-      if (!next) return;
-      const rawA = worldPoint(point, center, scale);
-      const rawB = worldPoint(next, center, scale);
-      const mid = { x: (rawA.x + rawB.x) / 2, y: (rawA.y + rawB.y) / 2 };
-      const dx = rawB.x - rawA.x;
-      const dz = rawB.y - rawA.y;
-      const length = Math.max(0.001, Math.hypot(dx, dz));
-      let nx = -dz / length;
-      let nz = dx / length;
-      if ((mid.x + nx * 0.2 - blockCenter.x) ** 2 + (mid.y + nz * 0.2 - blockCenter.y) ** 2 < (mid.x - nx * 0.2 - blockCenter.x) ** 2 + (mid.y - nz * 0.2 - blockCenter.y) ** 2) { nx *= -1; nz *= -1; }
-      const offset = 0.19;
-      const a = { x: rawA.x + nx * offset, y: rawA.y + nz * offset };
-      const b = { x: rawB.x + nx * offset, y: rawB.y + nz * offset };
-      if (Math.hypot(b.x - a.x, b.y - a.y) > 0.35) sidewalkSegments.push({ a, b });
-    });
-  });
-  if (!people.length || !sidewalkSegments.length) return null;
+  const destinations = [];
+  (blocks || []).forEach((block) => (block.parcels || []).forEach((parcel) => {
+    if (!parcel?.isBuildable || parcel.plannedPark || parcel.isFamilyEstate) return;
+    const c = centroid(parcel.polygon || []);
+    const wp = worldPoint(c, center, scale);
+    destinations.push({ x: wp.x, z: wp.y, parcelId: parcel.id });
+  }));
+  const roadNav = buildPawnRoadNav(roads || [], center, scale, blocks || []);
+  if (!people.length || destinations.length < 2) return null;
   const bodyGeometry = new THREE.CapsuleGeometry(0.075, 0.17, 2, 5);
   const headGeometry = new THREE.SphereGeometry(0.066, 6, 5);
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
@@ -3361,32 +3257,78 @@ function createPopulationRig(scene, agents, blocks, center, scale) {
   heads.castShadow = false;
   const matrix = new THREE.Matrix4();
   const color = new THREE.Color();
+  const hiddenScale = new THREE.Vector3(0, 0, 0);
+  const visibleScale = new THREE.Vector3(1, 1, 1);
+  const quat = new THREE.Quaternion();
+  const pickDestination = (seed, avoid) => {
+    if (!destinations.length) return null;
+    let index = Math.floor(seed * 1000003) % destinations.length;
+    if (destinations[index] === avoid && destinations.length > 1) index = (index + 1 + Math.floor(seed * 97)) % destinations.length;
+    return destinations[index];
+  };
+  const routeLength = (path) => {
+    let length = 0;
+    for (let i = 0; i < path.length - 1; i += 1) length += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
+    return Math.max(0.4, length);
+  };
   const entries = people.map((person, index) => {
     const seed = Number(person.seed || 0);
-    const sidewalk = sidewalkSegments[Math.min(sidewalkSegments.length - 1, Math.floor(seed * sidewalkSegments.length))];
-    const a = sidewalk.a;
-    const b = sidewalk.b;
+    const aDest = pickDestination(seed + index * 0.017, null);
+    const bDest = pickDestination(seed * 1.77 + index * 0.113, aDest);
+    const a = { x: aDest.x, z: aDest.z };
+    const b = { x: bDest.x, z: bDest.z };
+    const rawPath = shortestPawnRoadPath(roadNav, a, b) || [a, b];
+    const path = sidewalkPath(rawPath, seed > 0.5 ? 1 : -1, 0.24);
     const mission = !!person.mission;
     color.set(mission ? 0xd7a83f : ['#55463c', '#38434a', '#4d3e35', '#28332f', '#5b5150'][index % 5]);
     bodies.setColorAt(index, color);
     heads.setColorAt(index, new THREE.Color(index % 4 === 0 ? 0x8d6448 : index % 3 === 0 ? 0xb98765 : 0xc89b79));
-    return { a, b, phase: (seed * 1.73 + index * 0.137) % 1, speed: Number(person.speed || 0.8), distance: Math.max(0.4, Math.hypot(b.x - a.x, b.y - a.y)), mission };
+    return { from: aDest, to: bDest, path, phase: (seed * 1.73 + index * 0.137) % 1, speed: Number(person.speed || 0.8), distance: routeLength(path), mission, inside: seed > 0.82, dwell: 2 + (seed * 13) % 11, seed: seed || 0.31 };
   });
+  function reroute(entry, index) {
+    entry.from = entry.to || pickDestination(entry.seed + index * 0.03, null);
+    entry.to = pickDestination((entry.seed += 0.371 + index * 0.009), entry.from);
+    const a = { x: entry.from.x, z: entry.from.z };
+    const b = { x: entry.to.x, z: entry.to.z };
+    const rawPath = shortestPawnRoadPath(roadNav, a, b) || [a, b];
+    entry.path = sidewalkPath(rawPath, entry.seed > 0.5 ? 1 : -1, 0.24);
+    entry.distance = routeLength(entry.path);
+    entry.phase = 0;
+    entry.inside = false;
+    entry.dwell = 4 + (hashNumber(`${entry.to.parcelId}-${index}-${entry.seed}`) % 11);
+  }
   let lastUpdate = performance.now();
   function update(now, moving, speedMultiplier = 1) {
     const seconds = now * 0.001;
     const dt = Math.min(0.1, Math.max(0, (now - lastUpdate) / 1000));
     lastUpdate = now;
     entries.forEach((entry, index) => {
-      if (moving) entry.phase = (entry.phase + dt * (4.4 / entry.distance) * entry.speed * Math.max(0.25, speedMultiplier)) % 2;
-      const cycle = entry.phase;
-      const t = cycle <= 1 ? cycle : 2 - cycle;
-      const x = entry.a.x + (entry.b.x - entry.a.x) * t;
-      const z = entry.a.y + (entry.b.y - entry.a.y) * t;
+      if (entry.inside) {
+        if (moving) entry.dwell -= dt * Math.max(0.25, speedMultiplier);
+        if (entry.dwell <= 0) reroute(entry, index);
+        if (entry.inside) {
+          matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
+          bodies.setMatrixAt(index, matrix);
+          heads.setMatrixAt(index, matrix);
+          return;
+        }
+      }
+      if (moving) entry.phase += dt * (3.2 / entry.distance) * entry.speed * Math.max(0.25, speedMultiplier);
+      if (entry.phase >= 1) {
+        entry.phase = 1;
+        entry.inside = true;
+        matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
+        bodies.setMatrixAt(index, matrix);
+        heads.setMatrixAt(index, matrix);
+        return;
+      }
+      const pos = pointAlongPath(entry.path || [], entry.phase);
+      const x = pos.x;
+      const z = pos.z;
       const bob = moving ? Math.sin(seconds * 7 + index) * 0.009 : 0;
-      matrix.makeTranslation(x, 0.27 + bob, z);
+      matrix.compose(new THREE.Vector3(x, 0.27 + bob, z), quat, visibleScale);
       bodies.setMatrixAt(index, matrix);
-      matrix.makeTranslation(x, 0.48 + bob, z);
+      matrix.compose(new THREE.Vector3(x, 0.48 + bob, z), quat, visibleScale);
       heads.setMatrixAt(index, matrix);
     });
     bodies.instanceMatrix.needsUpdate = true;
@@ -3504,7 +3446,7 @@ function buildScene(payload) {
     contextBuildings: contextBuildingCount,
     parcels: (sceneData.blocks || []).reduce((sum, block) => sum + ((block.parcels || []).length), 0),
   };
-  const populationRig = createPopulationRig(scene, payload.populationAgents, sceneData.blocks, center, scale);
+  const populationRig = createPopulationRig(scene, payload.populationAgents, sceneData.blocks, center, scale, sceneData.roads || []);
   return { scene, rayTargets, districtTargets, safehouseMarkers, center, scale, bounds: b, buildingMap, debugRoadClipGroup, debugCameraGroup, outlineGroup, boundary, roadSpawn, generated: sceneData, ambient, sun, populationRig };
 }
 
@@ -3756,8 +3698,9 @@ function mount(root, payload, onSelect) {
   function animate(now = performance.now()) {
     const dt = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
     lastFrame = now;
-    if (populationRig && payload.timeMoving && now - (populationRig.lastUpdate || 0) > 32) {
-      populationRig.update(now, true, Number(payload.timeVisualSpeed || payload.timeSpeed || 1));
+    const livePayload = root._deskDonPayload || payload;
+    if (populationRig && livePayload.timeMoving && now - (populationRig.lastUpdate || 0) > 32) {
+      populationRig.update(now, true, Number(livePayload.timeVisualSpeed || livePayload.timeSpeed || 1));
       populationRig.lastUpdate = now;
     }
     if (now - fpsLast >= 1000) {
@@ -3785,7 +3728,7 @@ function mount(root, payload, onSelect) {
     const activeMarkers = markerVisible ? safehouseMarkers.filter((marker) => marker.visible && !marker.userData.racketInactive) : [];
     const animateSafehouseMarkers = activeMarkers.length && markerVisible;
     if (animateSafehouseMarkers && markerVisible) {
-      const timeSpinMultiplier = payload.timeMoving ? Math.max(1, Number(payload.timeVisualSpeed || payload.timeSpeed || 1)) : 1;
+        const timeSpinMultiplier = livePayload.timeMoving ? Math.max(1, Number(livePayload.timeVisualSpeed || livePayload.timeSpeed || 1)) : 1;
       activeMarkers.forEach((marker, i) => {
         marker.rotation.y += dt * (1.1 + i * 0.08) * timeSpinMultiplier;
         const markerScale = zoom < 0.58 ? Math.min(1.9, 1 + (0.58 - zoom) * 1.8) : 1;
@@ -3793,14 +3736,16 @@ function mount(root, payload, onSelect) {
         marker.position.y = (marker.userData.baseY || marker.position.y) + Math.sin(now * 0.002 * timeSpinMultiplier + i) * 0.08;
       });
     }
-    const pawnAnimating = !!(payload.timeMoving && payload.playerPawn?.targetParcelId);
+    const pawnRouteLive = !!livePayload.playerPawn?.targetParcelId;
+    const pawnAnimating = !!(livePayload.timeMoving && pawnRouteLive);
     const liveEntry = mounted.get(root);
-    const missionAnimating = !!(payload.missionTarget?.active && liveEntry && updateMissionTargetObject(liveEntry, payload.missionTarget, buildingMap));
+    const missionRouteLive = !!livePayload.missionTarget?.active;
+    const missionAnimating = !!(missionRouteLive && liveEntry && updateMissionTargetObject(liveEntry, livePayload.missionTarget, buildingMap));
     if (missionAnimating && missionTarget.visible) {
       missionTarget.userData.beacon.material.opacity = 0.24 + Math.sin(now * 0.004) * 0.1;
       missionTarget.userData.ring.scale.setScalar(1 + Math.sin(now * 0.005) * 0.13);
     }
-    const highlightAnimating = !!(payload.missionHighlight?.active && liveEntry && updateMissionHighlightObject(liveEntry, payload.missionHighlight));
+    const highlightAnimating = !!(livePayload.missionHighlight?.active && liveEntry && updateMissionHighlightObject(liveEntry, livePayload.missionHighlight));
     if (highlightAnimating && missionHighlight.visible) {
       missionHighlight.userData.ring.scale.setScalar(1 + Math.sin(now * 0.0045) * 0.18);
       missionHighlight.userData.beam.material.opacity = 0.24 + Math.sin(now * 0.0035) * 0.1;
@@ -3815,8 +3760,8 @@ function mount(root, payload, onSelect) {
         }
       }));
     }
-    const feedbackAnimating = !!(payload.playerPawn?.action?.active || liveEntry?.actionProgress?.visible || liveEntry?.cashFloat || (payload.playerPawn?.cashFloat?.amount && now - Number(payload.playerPawn.cashFloat.startedAt || 0) < 1800));
-    if ((pawnAnimating || feedbackAnimating) && liveEntry) updatePlayerPawnObject(liveEntry, payload.playerPawn, buildingMap);
+    const feedbackAnimating = !!(livePayload.playerPawn?.action?.active || liveEntry?.actionProgress?.visible || liveEntry?.cashFloat || (livePayload.playerPawn?.cashFloat?.amount && now - Number(livePayload.playerPawn.cashFloat.startedAt || 0) < 1800));
+    if ((pawnRouteLive || feedbackAnimating) && liveEntry) updatePlayerPawnObject(liveEntry, livePayload.playerPawn, buildingMap);
     if (playerPawn?.visible) {
       playerPawn.scale.setScalar(1);
     }
@@ -3831,11 +3776,12 @@ function mount(root, payload, onSelect) {
       updateZoomProjection();
     }
     const streetMoved = stepStreet(dt);
-    const needsContinuousRender = payload.timeMoving || pawnAnimating || missionAnimating || highlightAnimating || feedbackAnimating || animateSafehouseMarkers || zoomAnimating || streetMoved || cameraMode === 'street';
+    const needsContinuousRender = livePayload.timeMoving || pawnRouteLive || missionRouteLive || missionAnimating || highlightAnimating || feedbackAnimating || animateSafehouseMarkers || zoomAnimating || streetMoved || cameraMode === 'street';
+    if (livePayload.timeMoving && (pawnRouteLive || missionRouteLive) && nextRenderAt > now + 1000 / 180) nextRenderAt = now;
     if (needsContinuousRender && now >= nextRenderAt) {
-      if (payload.timeMoving) applyLiveLighting(now);
+      if (livePayload.timeMoving) applyLiveLighting(now);
       renderLoop();
-      nextRenderAt += 1000 / 180;
+      nextRenderAt = now + 1000 / 180;
       if (nextRenderAt < now - 1000 / 180) nextRenderAt = now + 1000 / 180;
     }
     const entry = mounted.get(root);
@@ -4164,6 +4110,8 @@ function mount(root, payload, onSelect) {
   };
   const onKeyUp = (e) => keyState.delete(String(e.key || '').toLowerCase());
   root.addEventListener('wheel', onWheel, { passive: false });
+  const wheelPanel = root.parentElement || null;
+  if (wheelPanel) wheelPanel.addEventListener('wheel', onWheel, { passive: false });
   root.addEventListener('pointerdown', onPointerDown);
   root.addEventListener('pointermove', onPointerMove);
   root.addEventListener('pointerup', onPointerUp);
@@ -4178,10 +4126,10 @@ function mount(root, payload, onSelect) {
   resize();
   setModeUI();
   applyHighlight(selectedParcelId);
-  updatePlayerPawnObject({ root, playerPawn, playerRoute, queuedRouteGroup, roadNav }, payload.playerPawn, buildingMap);
+  updatePlayerPawnObject({ root, playerPawn, playerRoute, queuedRouteGroup, roadNav, roadSpawn }, payload.playerPawn, buildingMap);
   const frame = requestAnimationFrame(animate);
   function focusParcel(parcelId, sourceLocation) { const destination = buildingMap.get(parcelId), point = destination?.center || (sourceLocation ? worldPoint(sourceLocation, center, scale) : null); if (!point) return false; panX = point.x; panZ = point.y; targetZoom = Math.max(1.35, targetZoom); cameraMode = 'iso'; saveView(); renderLoop(); return true; }
-  const mountedEntry = { root, renderer, scene, onResize, onWheel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, safehouseMarkers, center, scale };
+  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale };
   mounted.set(root, mountedEntry);
   updateMissionTargetObject(mountedEntry, payload.missionTarget, buildingMap);
   updateMissionHighlightObject(mountedEntry, payload.missionHighlight);
@@ -4231,7 +4179,10 @@ function updateTime(root, timePayload) {
     updatePlayerPawnObject(entry, root._deskDonPayload.playerPawn, entry.buildingMap);
     updateMissionTargetObject(entry, root._deskDonPayload.missionTarget, entry.buildingMap);
     updateMissionHighlightObject(entry, root._deskDonPayload.missionHighlight);
-    if (root._deskDonPayload.timeMoving) return;
+    if (root._deskDonPayload.timeMoving) {
+      if (root._deskDonPayload.playerPawn?.targetParcelId || root._deskDonPayload.missionTarget?.active) entry.renderLoop?.();
+      return;
+    }
     entry.applyLiveLighting?.(performance.now());
     entry.renderLoop?.();
   });

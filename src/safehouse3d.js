@@ -1,64 +1,7 @@
 import * as THREE from '/node_modules/three/build/three.module.js';
+import { getRadioVolume, isRadioPlaying, primeRadio, setRadioVolume, startJazz, stopJazz, toggleRadio } from './safehouse3d/core/radio.js';
 
 let active = null;
-let jazzAudio = null;
-let radioVolume = 0.62;
-let radioOn = false;
-
-function stopJazz() {
-  if (!jazzAudio) return false;
-  const audio = jazzAudio;
-  jazzAudio = null;
-  radioOn = false;
-  audio.pause();
-  audio.currentTime = 0;
-  return false;
-}
-
-function startJazz() {
-  if (jazzAudio) {
-    jazzAudio.volume = radioVolume;
-    radioOn = true;
-    jazzAudio.play().catch(() => {});
-    return true;
-  }
-  const audio = new Audio('/audio/sidewalk-hustle.mp3');
-  audio.loop = true;
-  audio.preload = 'auto';
-  audio.volume = radioVolume;
-  jazzAudio = audio;
-  radioOn = true;
-  audio.play().catch(() => {});
-  return true;
-}
-
-function primeRadio() {
-  if (jazzAudio) return true;
-  const audio = new Audio('/audio/sidewalk-hustle.mp3');
-  audio.loop = true;
-  audio.preload = 'auto';
-  audio.volume = 0;
-  jazzAudio = audio;
-  radioOn = false;
-  audio.play().catch(() => {});
-  return true;
-}
-
-function toggleRadio() {
-  return jazzAudio ? stopJazz() : startJazz();
-}
-
-function isRadioPlaying() {
-  return !!jazzAudio && radioOn;
-}
-
-function setRadioVolume(value) {
-  radioVolume = Math.max(0, Math.min(1, Number(value) || 0));
-  if (jazzAudio) jazzAudio.volume = radioVolume;
-  return radioVolume;
-}
-
-function getRadioVolume() { return radioVolume; }
 
 function disposeObject(root) {
   root?.traverse((object) => {
