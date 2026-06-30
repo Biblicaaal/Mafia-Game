@@ -30,7 +30,7 @@ import {
 
 const mounted = new Map();
 const savedViews = new Map();
-const RENDERER_VERSION = '3d-first-district-generator-v34-convex-districts-visual-exact-only';
+const RENDERER_VERSION = 'Pre-Alpha version 0.34';
 const WORLD_SCALE = 0.1;
 const FLOOR_HEIGHT = 2.35;
 const HEIGHT_SCALE = 0.33;
@@ -570,7 +570,34 @@ function generate3dDistrict(payload) {
       best.block.dominantCategory = 'Family Estate';
     }
   }
-  if (!payload.playerSafehouse || payload.playerSafehouse.districtId === payload.district?.id) {
+  if (payload.playerSafehouse?.parcelId) {
+    let foundSafehouse = null;
+    blocks.forEach((block) => (block.parcels || []).forEach((parcel) => {
+      parcel.isPlayerSafehouse = false;
+      if (parcel.label === 'Starting Safehouse' || parcel.displayName === 'Starting Safehouse') {
+        parcel.label = parcel.businessName || parcel.locationName || parcel.subtype || 'Residence';
+        parcel.displayName = parcel.label;
+      }
+      const sameDistrict = !payload.playerSafehouse.districtId || parcel.districtId === payload.playerSafehouse.districtId || block.districtId === payload.playerSafehouse.districtId;
+      if (!foundSafehouse && sameDistrict && parcel.id === payload.playerSafehouse.parcelId) foundSafehouse = { block, parcel };
+    }));
+    if (foundSafehouse?.parcel) {
+      Object.assign(foundSafehouse.parcel, {
+        id: payload.playerSafehouse.parcelId,
+        blockId: foundSafehouse.block.id,
+        label: 'Starting Safehouse',
+        displayName: 'Starting Safehouse',
+        isPlayerSafehouse: true,
+        isSafehouse: true,
+        defaultFactionControl: 'player_family',
+        occupiedBy: 'player_family',
+        familyId: 'player',
+        description: 'The family starting house: small, quiet, and useful as the first private place to hide, plan, and recover.',
+        security: Math.max(foundSafehouse.parcel.security || 0, 48),
+        strategicValue: Math.max(foundSafehouse.parcel.strategicValue || 0, 70),
+      });
+    }
+  } else {
     blocks.forEach((block) => (block.parcels || []).forEach((parcel) => {
       parcel.isPlayerSafehouse = false;
       if (parcel.label === 'Starting Safehouse' || parcel.displayName === 'Starting Safehouse') {
@@ -2804,14 +2831,29 @@ function contextBuildingGeometry(parcel, center, scale) {
   return geo;
 }
 
-function renderContextDistrict(scene, context, basePayload, center, scale, materials, districtTargets) {
+function renderContextDistrict(scene, context, basePayload, center, scale, materials, districtTargets, rayTargets, buildingMap) {
   if (!context?.polygon || context.polygon.length < 3) return { buildings: 0 };
+  const islandView = !!basePayload.islandView;
   const fogOpacity = Math.max(0.06, Math.min(0.6, Number(basePayload.fogBuildingOpacity ?? 0.24)));
   const siblingDistricts = [{ id: basePayload.district?.id, polygon: basePayload.outerPolygon }]
     .concat(basePayload.contextDistricts || [])
     .filter((district) => district?.id !== context.id && district?.polygon?.length >= 3);
-  const generated = context.selfOuterPolygon?.length && context.selfToFocus
-    ? (() => {
+  const generated = islandView
+    ? generate3dDistrict({
+      district: context,
+      outerPolygon: context.polygon,
+      inheritedRoads: context.inheritedRoads || [],
+      contextDistricts: siblingDistricts,
+      seed: `${basePayload.seed || 0}-${context.id || context.name || 'context'}`,
+      blocks: context.blocks || [],
+      playerSafehouse: basePayload.playerSafehouse,
+      protectedBusinesses: basePayload.protectedBusinesses || {},
+      collectionRushActive: basePayload.collectionRushActive,
+      startingProtectionDistrictId: basePayload.startingProtectionDistrictId,
+      mafiaColor: basePayload.mafiaColor,
+    })
+    : context.selfOuterPolygon?.length && context.selfToFocus
+      ? (() => {
       const selfGenerated = generate3dDistrict({
         district: context,
         outerPolygon: context.selfOuterPolygon,
@@ -2825,16 +2867,19 @@ function renderContextDistrict(scene, context, basePayload, center, scale, mater
         blocks: (selfGenerated.blocks || []).map((block) => transformBlockAffine(block, context.selfToFocus)),
       });
     })()
-    : generate3dDistrict({
-      district: context,
-      outerPolygon: context.polygon,
-      inheritedRoads: context.inheritedRoads || [],
-      contextDistricts: siblingDistricts,
-      seed: `${basePayload.seed || 0}-${context.id || context.name || 'context'}`,
-    });
+      : generate3dDistrict({
+        district: context,
+        outerPolygon: context.polygon,
+        inheritedRoads: context.inheritedRoads || [],
+        contextDistricts: siblingDistricts,
+        seed: `${basePayload.seed || 0}-${context.id || context.name || 'context'}`,
+      });
+  context.renderedRoads = generated.roads || [];
+  context.renderedBlocks = generated.blocks || [];
+  context.renderedOuterPolygon = generated.outerPolygon || context.polygon || [];
   const group = new THREE.Group();
   const hoverObjects = [];
-  addFlatShape(group, generated.outerPolygon, center, scale, 0x5f6661, -0.012, 0.36);
+  addFlatShape(group, generated.outerPolygon, center, scale, islandView ? 0x969a91 : 0x5f6661, -0.012, islandView ? 0.86 : 0.36);
   const hoverFill = addFlatShape(group, generated.outerPolygon, center, scale, 0xe4b84a, 0.034, 0.18);
   const hoverLine = addLineLoop(group, generated.outerPolygon, center, scale, 0xffd86a, 0.075);
   if (hoverFill) hoverFill.visible = false;
@@ -2842,7 +2887,7 @@ function renderContextDistrict(scene, context, basePayload, center, scale, mater
     hoverLine.visible = false;
     hoverLine.material.opacity = 0.95;
   }
-  const navSurface = addFlatShape(group, generated.outerPolygon, center, scale, 0x000000, 0.028, 0);
+  const navSurface = islandView ? null : addFlatShape(group, generated.outerPolygon, center, scale, 0x000000, 0.028, 0);
   if (navSurface) {
     navSurface.material.transparent = true;
     navSurface.material.opacity = 0;
@@ -2855,7 +2900,11 @@ function renderContextDistrict(scene, context, basePayload, center, scale, mater
   (generated.roads || []).forEach((road) => {
     const mesh = roadMesh(road, center, scale, road.a, road.b, generated.outerPolygon);
     if (!mesh) return;
-    muteObjectMaterials(mesh, 0x24282b, 0.32);
+    if (islandView) {
+      mesh.position.y = 0.01;
+    } else {
+      muteObjectMaterials(mesh, 0x24282b, 0.32);
+    }
     mesh.userData.hoverColor = 0xb99745;
     mesh.userData.hoverOpacity = 0.62;
     hoverObjects.push(mesh);
@@ -2867,9 +2916,28 @@ function renderContextDistrict(scene, context, basePayload, center, scale, mater
   const buildingGeometries = [];
   const edgeGeometries = [];
   (generated.blocks || []).forEach((block) => {
-    addFlatShape(group, block.polygon, center, scale, 0x737b72, 0.006, 0.24);
+    addFlatShape(group, block.polygon, center, scale, islandView ? 0x8e9289 : 0x737b72, 0.006, islandView ? 0.72 : 0.24);
+    if (islandView) addLineLoop(group, block.polygon, center, scale, 0x42483f, 0.09);
     (block.parcels || []).forEach((parcel) => {
-      if (buildings > 220) return;
+      if (buildings > (islandView ? 900 : 220)) return;
+      if (islandView) {
+        const outline = addLineLoop(group, parcel.polygon, center, scale, 0xffe08a, 0.11);
+        if (outline) group.add(outline);
+        const sceneParcel = parcel.isBuildable && parcel.buildingPolygon
+          ? parcel
+          : Object.assign({}, parcel, {
+            isBuildable: parcel.isBuildable !== false,
+            buildingPolygon: parcel.buildingPolygon || centeredFootprint(parcel.polygon, 0.72),
+          });
+        const building = buildingForParcel(sceneParcel, center, scale, materials, rayTargets || dummyTargets, buildingMap || dummyMap, Object.assign({}, basePayload.debug || {}, { exactExtrusion: true }));
+        if (building) {
+          group.add(building);
+          buildings += 1;
+        } else {
+          addLotSurface(parcel, center, scale, group, 'park');
+        }
+        return;
+      }
       const geo = contextBuildingGeometry(parcel, center, scale);
       if (geo) {
         buildingGeometries.push(geo);
@@ -2929,19 +2997,23 @@ function addBridgeLandingMarkers(scene, landings, center, scale) {
     if (!landing?.point) return;
     const wp = worldPoint(landing.point, center, scale);
     const group = new THREE.Group();
-    group.position.set(wp.x, 0.09, wp.y);
-    const baseGeo = new THREE.CylinderGeometry(0.62, 0.82, 0.16, 8);
+    group.position.set(wp.x, 0.16, wp.y);
+    const baseGeo = new THREE.CylinderGeometry(0.78, 0.96, 0.18, 8);
     const baseMat = new THREE.MeshLambertMaterial({ color: 0x2f3433, emissive: 0x090806, flatShading: true });
     const base = new THREE.Mesh(baseGeo, baseMat);
     group.add(base);
-    const capGeo = new THREE.CylinderGeometry(0.34, 0.48, 0.12, 8);
+    const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.9, 8);
+    const post = new THREE.Mesh(postGeo, new THREE.MeshLambertMaterial({ color: 0x1d2220, emissive: 0x050504, flatShading: true }));
+    post.position.y = 0.48;
+    group.add(post);
+    const capGeo = new THREE.CylinderGeometry(0.42, 0.54, 0.14, 8);
     const capMat = new THREE.MeshLambertMaterial({ color: 0xd0a850, emissive: 0x2a1b05, flatShading: true });
     const cap = new THREE.Mesh(capGeo, capMat);
-    cap.position.y = 0.14;
+    cap.position.y = 0.96;
     group.add(cap);
-    const ringGeo = new THREE.RingGeometry(0.92, 1.08, 8);
+    const ringGeo = new THREE.RingGeometry(1.04, 1.24, 8);
     ringGeo.rotateX(-Math.PI / 2);
-    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xe8c36b, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }));
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xe8c36b, transparent: true, opacity: 0.54, side: THREE.DoubleSide, depthWrite: false }));
     ring.position.y = 0.04;
     group.add(ring);
     scene.add(group);
@@ -3021,6 +3093,12 @@ function applyEstateFocusDimming(scene, estateParcelId) {
 }
 
 function payloadBounds(payload) {
+  if (payload?.islandView && Array.isArray(payload.contextDistricts) && payload.contextDistricts.length) {
+    const points = []
+      .concat(payload.outerPolygon || [])
+      .concat(...payload.contextDistricts.map((district) => district?.polygon || []));
+    if (points.length >= 3) return bounds(points);
+  }
   return bounds(payload.outerPolygon || []);
 }
 
@@ -3235,6 +3313,14 @@ function updateMissionTargetObject(entry, target, buildingMap) {
   return true;
 }
 
+function pedestrianDensityForPayload(payload = {}) {
+  const speed = Number(payload.timeSpeed || 1);
+  if (speed >= 500) return 0;
+  const period = String(payload.timePeriod || '').toLowerCase();
+  if (period === 'night') return 0.05;
+  return 1;
+}
+
 function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
   const people = Array.isArray(agents) ? agents.slice(0, 50) : [];
   const destinations = [];
@@ -3298,11 +3384,18 @@ function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
     entry.dwell = 4 + (hashNumber(`${entry.to.parcelId}-${index}-${entry.seed}`) % 11);
   }
   let lastUpdate = performance.now();
-  function update(now, moving, speedMultiplier = 1) {
+  function update(now, moving, speedMultiplier = 1, density = 1) {
     const seconds = now * 0.001;
     const dt = Math.min(0.1, Math.max(0, (now - lastUpdate) / 1000));
     lastUpdate = now;
+    const visibleLimit = Math.max(0, Math.min(entries.length, Math.ceil(entries.length * Math.max(0, Math.min(1, density)))));
     entries.forEach((entry, index) => {
+      if (index >= visibleLimit) {
+        matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
+        bodies.setMatrixAt(index, matrix);
+        heads.setMatrixAt(index, matrix);
+        return;
+      }
       if (entry.inside) {
         if (moving) entry.dwell -= dt * Math.max(0.25, speedMultiplier);
         if (entry.dwell <= 0) reroute(entry, index);
@@ -3339,7 +3432,7 @@ function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
   if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
   if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
   scene.add(bodies, heads);
-  update(performance.now(), false);
+  update(performance.now(), false, 1, 1);
   return { bodies, heads, update, count: people.length };
 }
 
@@ -3375,7 +3468,7 @@ function buildScene(payload) {
 
   let contextBuildingCount = 0;
   contextDistricts.forEach((district) => {
-    const result = renderContextDistrict(scene, district, payload, center, scale, materials, districtTargets);
+    const result = renderContextDistrict(scene, district, payload, center, scale, materials, districtTargets, rayTargets, buildingMap);
     contextBuildingCount += result.buildings || 0;
   });
 
@@ -3441,10 +3534,25 @@ function buildScene(payload) {
   const roadSpawn = (sceneData.roads || [])[0]
     ? worldPoint({ x: ((sceneData.roads || [])[0].a.x + (sceneData.roads || [])[0].b.x) / 2, y: ((sceneData.roads || [])[0].a.y + (sceneData.roads || [])[0].b.y) / 2 }, center, scale)
     : new THREE.Vector2(0, 0);
+  const allRenderedParcels = (sceneData.blocks || []).reduce((out, block) => out.concat(block.parcels || []), []);
+  const countBy = (items, getter) => items.reduce((map, item) => {
+    const key = getter(item) || 'Unknown';
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+  const topCounts = (map, limit = 5) => Object.keys(map)
+    .sort((a, b) => map[b] - map[a] || a.localeCompare(b))
+    .slice(0, limit)
+    .map((key) => `${key} ${map[key]}`);
   sceneData.renderStats = {
     buildings: renderedBuildingCount,
     contextBuildings: contextBuildingCount,
-    parcels: (sceneData.blocks || []).reduce((sum, block) => sum + ((block.parcels || []).length), 0),
+    parcels: allRenderedParcels.length,
+    blocks: (sceneData.blocks || []).length,
+    roads: (sceneData.roads || []).length,
+    categories: topCounts(countBy(allRenderedParcels, (parcel) => parcel.category), 5),
+    subtypes: topCounts(countBy(allRenderedParcels, (parcel) => parcel.subtype || parcel.kind), 5),
+    sizes: topCounts(countBy(allRenderedParcels, (parcel) => parcel.sizeClass || (parcel.size ? `Size ${parcel.size}` : 'Unknown')), 5),
   };
   const populationRig = createPopulationRig(scene, payload.populationAgents, sceneData.blocks, center, scale, sceneData.roads || []);
   return { scene, rayTargets, districtTargets, safehouseMarkers, center, scale, bounds: b, buildingMap, debugRoadClipGroup, debugCameraGroup, outlineGroup, boundary, roadSpawn, generated: sceneData, ambient, sun, populationRig };
@@ -3463,7 +3571,12 @@ function mount(root, payload, onSelect) {
   root.appendChild(renderer.domElement);
 
   const { scene, rayTargets, districtTargets, safehouseMarkers, buildingMap, debugCameraGroup, outlineGroup, center, scale, roadSpawn, generated, ambient, sun, populationRig } = buildScene(payload);
-  const roadNav = buildPawnRoadNav(generated.roads || [], center, scale, generated.blocks || []);
+  const islandNavDistricts = generated.contextDistricts || [];
+  const navRoads = (generated.roads || [])
+    .concat(generated.inheritedRoads || [])
+    .concat(...islandNavDistricts.map((district) => (district.renderedRoads || district.roads || []).concat(district.inheritedRoads || [])));
+  const navBlocks = (generated.blocks || []).concat(...islandNavDistricts.map((district) => district.renderedBlocks || district.blocks || []));
+  const roadNav = buildPawnRoadNav(navRoads, center, scale, navBlocks);
   const playerPawn = createPlayerPawn(payload.playerPawn || {});
   const missionTarget = createMissionTargetRig(scene);
   const missionHighlight = createMissionHighlightRig(scene);
@@ -3481,9 +3594,9 @@ function mount(root, payload, onSelect) {
   const cameraLookTarget = new THREE.Vector3();
   const isoTarget = new THREE.Vector3();
   const estateFocus = !!payload.estateFocus && !!payload.selectedParcelId;
-  const viewKey = (payload.district?.id || 'district') + (estateFocus ? ':estate' : '');
+  const viewKey = (payload.islandView ? `island:${payload.islandId || payload.islandName || payload.district?.id || 'district'}` : (payload.district?.id || 'district')) + (estateFocus ? ':estate' : '');
   const saved = savedViews.get(viewKey) || {};
-  let zoom = saved.zoom || 1;
+  let zoom = saved.zoom || (payload.islandView ? 0.74 : 1);
   let panX = saved.panX || 0;
   let panZ = saved.panZ || 0;
   let azimuth = typeof saved.azimuth === 'number' ? saved.azimuth : Math.PI / 4;
@@ -3510,6 +3623,7 @@ function mount(root, payload, onSelect) {
   let isoSnapOffset = 0;
   let dragging = false;
   let moved = false;
+  let lastDragEndedAt = 0;
   let districtNavAnimating = false;
   let hoveredDistrictNav = null;
   let dragMode = 'pan';
@@ -3518,13 +3632,29 @@ function mount(root, payload, onSelect) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const keyState = new Set();
+  function setGlobal3dPointerActive(active) {
+    if (active) {
+      document.body.dataset.deskdon3dPointer = '1';
+      return;
+    }
+    window.setTimeout(() => {
+      if (document.body.dataset.deskdon3dPointer === '1') delete document.body.dataset.deskdon3dPointer;
+    }, 220);
+  }
   const selectedLabel = document.createElement('div');
   selectedLabel.className = 'district-three-debug-label';
   root.appendChild(selectedLabel);
   const versionLabel = document.createElement('div');
   versionLabel.className = 'district-three-version-label';
   const stats = generated.renderStats || { buildings: 0, parcels: 0 };
-  versionLabel.textContent = `${RENDERER_VERSION} - ${generated.style} - ${stats.buildings}/${stats.parcels} buildings - ${generated.validation.ok ? 'valid' : generated.validation.issues.length + ' issues'}`;
+  const validationText = generated.validation.ok ? 'valid' : `${generated.validation.issues.length} issues`;
+  versionLabel.innerHTML = [
+    `<strong>3D renderer</strong><span>${RENDERER_VERSION} &middot; ${generated.style} &middot; ${validationText}</span>`,
+    `<span>${stats.buildings || 0} buildings &middot; ${stats.parcels || 0} parcels &middot; ${stats.blocks || 0} blocks &middot; ${stats.roads || 0} roads</span>`,
+    `<span>Uses: ${(stats.categories || []).join(', ') || 'none'}</span>`,
+    `<span>Types: ${(stats.subtypes || []).join(', ') || 'none'}</span>`,
+    `<span>Sizes: ${(stats.sizes || []).join(', ') || 'none'}</span>`,
+  ].join('');
   root.appendChild(versionLabel);
   const fpsLabel = document.createElement('div');
   fpsLabel.className = 'district-three-fps-label';
@@ -3565,7 +3695,7 @@ function mount(root, payload, onSelect) {
         entry.highlight = edge;
       }
     });
-    selectedLabel.textContent = payload.debug?.selectedParcelId && parcelId ? `Selected parcel: ${parcelId}` : '';
+    selectedLabel.textContent = payload.debug?.selectedParcelId && parcelId ? `Selected: ${parcelId}` : '';
   }
 
   function setModeUI() {
@@ -3614,8 +3744,10 @@ function mount(root, payload, onSelect) {
   }
 
   function resize() {
+    if (root._deskDonSuspended) return;
     applyPerformanceLevel();
     const rect = root.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 40) return;
     const width = Math.max(320, Math.floor(rect.width));
     const height = Math.max(260, Math.floor(rect.height));
     renderer.setSize(width, height, false);
@@ -3696,11 +3828,18 @@ function mount(root, payload, onSelect) {
   let renderedFrames = 0;
   let fpsLast = performance.now();
   function animate(now = performance.now()) {
+    const currentEntry = mounted.get(root);
+    if (root._deskDonSuspended) {
+      if (currentEntry) currentEntry.frame = 0;
+      return;
+    }
     const dt = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
     lastFrame = now;
     const livePayload = root._deskDonPayload || payload;
-    if (populationRig && livePayload.timeMoving && now - (populationRig.lastUpdate || 0) > 32) {
-      populationRig.update(now, true, Number(livePayload.timeVisualSpeed || livePayload.timeSpeed || 1));
+    const populationDensity = pedestrianDensityForPayload(livePayload);
+    const populationInterval = Number(livePayload.timeSpeed || 1) >= 500 ? 240 : 32;
+    if (populationRig && (livePayload.timeMoving || populationDensity < 1) && now - (populationRig.lastUpdate || 0) > populationInterval) {
+      populationRig.update(now, !!livePayload.timeMoving, Number(livePayload.timeVisualSpeed || livePayload.timeSpeed || 1), populationDensity);
       populationRig.lastUpdate = now;
     }
     if (now - fpsLast >= 1000) {
@@ -3791,12 +3930,13 @@ function mount(root, payload, onSelect) {
   function onWheel(e) {
     e.preventDefault();
     e.stopPropagation();
-    targetZoom = Math.max(0.45, Math.min(3.2, targetZoom * Math.exp(-e.deltaY * 0.0015)));
+    targetZoom = Math.max(0.2, Math.min(3.2, targetZoom * Math.exp(-e.deltaY * 0.0015)));
   }
 
   function onPointerDown(e) {
     e.preventDefault();
     e.stopPropagation();
+    setGlobal3dPointerActive(true);
     setDistrictHover(hoveredDistrictNav, false);
     hoveredDistrictNav = null;
     root.style.cursor = 'grabbing';
@@ -3958,7 +4098,7 @@ function mount(root, payload, onSelect) {
       entering.appendChild(card);
       root.appendChild(entering);
       window.setTimeout(() => {
-        if (typeof onSelect === 'function') onSelect({ districtId: nav.id, name: nav.name, entering: true });
+        if (typeof onSelect === 'function') onSelect({ districtNavId: nav.id, name: nav.name, entering: true });
       }, 300);
     }
     requestAnimationFrame(step);
@@ -3996,6 +4136,8 @@ function mount(root, payload, onSelect) {
     const wasMoved = moved;
     dragging = false;
     moved = false;
+    if (wasMoved) lastDragEndedAt = performance.now();
+    setGlobal3dPointerActive(false);
     try { root.releasePointerCapture?.(e.pointerId); } catch {}
     root.style.cursor = 'grab';
     if (wasMoved) {
@@ -4054,6 +4196,8 @@ function mount(root, payload, onSelect) {
     }
     dragging = false;
     moved = false;
+    lastDragEndedAt = performance.now();
+    setGlobal3dPointerActive(false);
     dragMode = '';
     setDistrictHover(hoveredDistrictNav, false);
     hoveredDistrictNav = null;
@@ -4064,6 +4208,7 @@ function mount(root, payload, onSelect) {
   const onContextMenu = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (dragging || moved || performance.now() - lastDragEndedAt < 280) return;
     const selectedParcel = parcelAtClientPoint(e.clientX, e.clientY);
     if (selectedParcel) {
       selectedParcelId = selectedParcel.id;
@@ -4129,10 +4274,11 @@ function mount(root, payload, onSelect) {
   updatePlayerPawnObject({ root, playerPawn, playerRoute, queuedRouteGroup, roadNav, roadSpawn }, payload.playerPawn, buildingMap);
   const frame = requestAnimationFrame(animate);
   function focusParcel(parcelId, sourceLocation) { const destination = buildingMap.get(parcelId), point = destination?.center || (sourceLocation ? worldPoint(sourceLocation, center, scale) : null); if (!point) return false; panX = point.x; panZ = point.y; targetZoom = Math.max(1.35, targetZoom); cameraMode = 'iso'; saveView(); renderLoop(); return true; }
-  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale };
+  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, animate, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale, populationRig };
   mounted.set(root, mountedEntry);
   updateMissionTargetObject(mountedEntry, payload.missionTarget, buildingMap);
   updateMissionHighlightObject(mountedEntry, payload.missionHighlight);
+  populationRig?.update(performance.now(), false, 1, pedestrianDensityForPayload(payload));
 }
 
 function withMounted(root, fn) {
@@ -4179,6 +4325,7 @@ function updateTime(root, timePayload) {
     updatePlayerPawnObject(entry, root._deskDonPayload.playerPawn, entry.buildingMap);
     updateMissionTargetObject(entry, root._deskDonPayload.missionTarget, entry.buildingMap);
     updateMissionHighlightObject(entry, root._deskDonPayload.missionHighlight);
+    entry.populationRig?.update(performance.now(), !!root._deskDonPayload.timeMoving, Number(root._deskDonPayload.timeVisualSpeed || root._deskDonPayload.timeSpeed || 1), pedestrianDensityForPayload(root._deskDonPayload));
     if (root._deskDonPayload.timeMoving) {
       if (root._deskDonPayload.playerPawn?.targetParcelId || root._deskDonPayload.missionTarget?.active) entry.renderLoop?.();
       return;
@@ -4186,6 +4333,19 @@ function updateTime(root, timePayload) {
     entry.applyLiveLighting?.(performance.now());
     entry.renderLoop?.();
   });
+}
+
+function setSuspended(root, suspended) {
+  const entry = mounted.get(root);
+  if (!entry) return;
+  root._deskDonSuspended = !!suspended;
+  if (!root._deskDonSuspended) {
+    requestAnimationFrame(() => {
+      entry.onResize?.();
+      entry.renderLoop?.();
+      if (!entry.frame) entry.frame = requestAnimationFrame(entry.animate);
+    });
+  }
 }
 
 function updateFogOpacity(root, opacity) {
@@ -4248,7 +4408,7 @@ function updateRackets(root, racketPayload) {
 }
 
 function focusParcel(root, parcelId, sourceLocation) { let focused = false; withMounted(root, (entry) => { focused = !!entry.focusParcel?.(parcelId, sourceLocation); }); return focused; }
-window.DeskDon3D = { mount, cleanup, rotate, cameraView, resetCamera, focusParcel, updateTime, updateFogOpacity, updateRackets };
+window.DeskDon3D = { mount, cleanup, rotate, cameraView, resetCamera, focusParcel, updateTime, updateFogOpacity, updateRackets, setSuspended };
 window.DeskDon3D.exportData = function exportData(root) {
   return root?._deskDonGenerated || null;
 };

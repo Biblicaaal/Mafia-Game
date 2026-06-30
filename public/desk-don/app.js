@@ -1,5 +1,12 @@
 'use strict';
-var tabs=['Dashboard','Family','Creator','Calendar','Inbox','City','District','Crew','Tasks','Opportunities','Fronts','Rackets','Rivals','Providence'];
+var tabs=[
+  {id:'Dashboard',label:'MAP',short:'MAP',icon:'&#9673;',group:'main'},
+  {id:'City',label:'CITY VIEW',short:'3D',icon:'&#9638;',group:'main'},
+  {id:'Inbox',label:'MESSAGES',short:'MSG',icon:'&#9993;',group:'social'},
+  {id:'Family',label:'FAMILY',short:'FAM',icon:'&#9818;',group:'social'},
+  {id:'Creator',label:'CHAR CREATOR (DEBUG)',short:'CRT',icon:'&#10002;',group:'debug'},
+  {id:'Providence',label:'PROVIDENCE (DEBUG)',short:'PRV',icon:'&#9881;',group:'debug'}
+];
 var mapDistricts={dockside:{island:'West Island',label:'Dockside',points:'92,438 164,400 220,418 230,530 184,614 96,584 76,505',cx:150,cy:518},riverside:{island:'West Island',label:'Riverside',points:'76,214 124,136 214,150 252,252 220,418 164,400 96,354',cx:158,cy:278},south_yards:{island:'West Island',label:'South Yards',points:'214,150 292,192 324,286 304,392 230,530 220,418 252,252',cx:265,cy:326},little_italy:{island:'Central Island',label:'Little Italy',points:'410,172 526,148 628,190 632,300 516,320 404,286',cx:514,cy:226},financial:{island:'Central Island',label:'Financial',points:'404,286 516,320 632,300 666,430 636,586 514,632 410,586',cx:536,cy:456},old_town:{island:'Central Island',label:'Old Town',points:'354,246 410,172 404,286 410,586 366,640 328,532 334,374',cx:374,cy:424},midtown:{island:'Central Island',label:'Midtown',points:'636,586 666,430 632,300 706,322 738,444 716,548 686,620',cx:682,cy:466},ironworks:{island:'North Island',label:'Ironworks',points:'770,136 866,100 988,124 1034,194 982,284 858,294 762,232',cx:896,cy:196},railhead:{island:'North Island',label:'Railhead',points:'762,232 858,294 982,284 1030,350 996,434 872,428 762,354',cx:896,cy:354},uptown:{island:'East Island',label:'Uptown',points:'776,486 900,452 1008,492 1018,604 904,646 782,604',cx:900,cy:546},garden_heights:{island:'East Island',label:'Garden',points:'1008,492 1102,534 1076,664 1010,716 904,646 1018,604',cx:1014,cy:612},airport:{island:'East Island',label:'Airport',points:'782,604 904,646 1010,716 930,784 786,742 724,664',cx:866,cy:696}};
 var islandMasses=['M70 210 L118 128 L190 138 L228 158 L294 194 L330 282 L314 398 L268 512 L190 626 L96 592 L70 514 L48 444 L92 416 L72 354 L54 276 Z','M350 244 L408 166 L526 142 L632 184 L714 320 L746 444 L720 550 L686 626 L620 596 L516 638 L410 590 L365 642 L326 536 L332 374 Z','M768 134 L864 98 L990 120 L1040 194 L986 286 L1036 350 L1000 438 L872 432 L760 354 L758 232 Z','M776 486 L902 448 L1012 490 L1106 532 L1078 666 L1008 720 L930 786 L786 744 L722 664 L780 604 Z'];
 var mapBridges=['M306 352 L350 330','M308 514 L332 502','M704 322 L760 286','M714 540 L778 570','M1000 438 L1030 492'];
@@ -8,7 +15,7 @@ var islandNames=['Westhaven Island','Central Crown','North Iron Isle','East Gard
 var rawDistricts=[['dockside','Dockside',44,52,61,20,48,8,38],['riverside','Riverside',67,49,55,16,61,9,29],['south_yards','South Yards',35,41,70,31,36,11,35],['little_italy','Little Italy',58,44,72,34,46,18,24],['financial','Financial Ward',88,76,35,8,74,4,18],['old_town','Old Town',52,47,63,22,51,10,26],['midtown','Midtown',73,58,49,14,68,6,22],['ironworks','Ironworks',39,38,68,27,43,13,42],['railhead','Railhead',46,43,66,25,48,7,37],['uptown','Uptown',82,66,41,11,71,3,21],['garden_heights','Garden Heights',79,63,38,10,76,2,16],['airport','Municipal Airport',69,71,44,9,70,1,19]];
 function defaultFamilyState(){return{don:{id:'don',name:'Vito Moretti',title:'Don',age:52,initials:'VM',reputation:64,stress:28,health:82,loyalty:100,competence:88,skills:{violence:58,diplomacy:72,cunning:81,stewardship:69,streetSense:76},traits:['Calculating','Family First','Ruthless','Superstitious'],concern:'Every favor in the city now comes with interest.',note:'Founder of the Moretti table. Keeps business quiet, family loud, and enemies guessing.'},relatives:[{id:'sofia',name:'Sofia Moretti',title:'Wife',age:48,initials:'SM',loyalty:86,competence:74,succession:'stabilizer',traits:['Patient','Connected'],concern:'Wants Sunday dinners protected from business.',note:'Knows which relatives are wounded before anyone says a word.'},{id:'marco',name:'Marco Moretti',title:'Eldest Son',age:27,initials:'MM',loyalty:71,competence:62,succession:'heir apparent',traits:['Proud','Restless'],concern:'Feels captains still treat him like a boy.',note:'Useful in public, volatile in private.'},{id:'lucia',name:'Lucia Moretti',title:'Daughter',age:24,initials:'LM',loyalty:78,competence:83,succession:'political asset',traits:['Sharp','Careful'],concern:'Tracks the respectable side of the family name.',note:'Could become the family bridge into banks, courts, and charities.'},{id:'enzo',name:'Enzo Bellini',title:'Cousin Advisor',age:44,initials:'EB',loyalty:68,competence:79,succession:'outside blood',traits:['Practical','Ambitious'],concern:'Has friends in every office and a price for each.',note:'Too useful to ignore, too hungry to fully trust.'}],innerCircle:[{id:'grace',name:'Grace Moretti',title:'Underboss',age:39,initials:'GM',loyalty:83,competence:86,rank:'Underboss',traits:['Planner','Hard Bargain'],concern:'Captains are testing how much autonomy they have.',note:'Turns vague orders into working pressure.'},{id:'marta',name:'Marta Bellini',title:'Consigliere',age:36,initials:'MB',loyalty:74,competence:88,rank:'Consigliere',traits:['Smooth Talker','Keeps Books'],concern:'The clean side is growing faster than the paperwork.',note:'Sees the family as a machine that survives by looking boring.'},{id:'sal',name:'Sal Vitale',title:'Capo',age:41,initials:'SV',loyalty:70,competence:67,rank:'Capo',traits:['Steady Hands'],concern:'Dockside earners want clearer territory.',note:'Reliable when watched, slower when trusted.'},{id:'nicky',name:'Nicky Russo',title:'Enforcer',age:33,initials:'NR',loyalty:62,competence:72,rank:'Enforcer',traits:['Feared','Short Fuse'],concern:'Needs a useful outlet before he invents one.',note:'A threat in a suit. Sometimes even to the family.'},{id:'rosa',name:'Rosa Falco',title:'Bookkeeper',age:46,initials:'RF',loyalty:77,competence:91,rank:'Bookkeeper',traits:['Precise','Cold Memory'],concern:'Several envelopes do not match the ledgers.',note:'If Rosa sounds worried, the room should get quiet.'}],hooks:{favors:['Judge Cavallo owes one discreet introduction','Dockworkers expect protection by Friday'],grudges:['The Vipers embarrassed Marco at the Club Roma'],secrets:['A city auditor is quietly on the payroll'],ambitions:['Move the Moretti name into legitimate construction']},decisionLog:[]};}
 function defaultNarratorState(){return{version:'0.1',narratorId:'providence',prosperity:42,heat:18,stability:58,ambitionPressure:34,momentum:35,fortune:0,playerCondition:'Stable',eventPressure:18,recentEvents:[],eventHistory:[],activeCooldowns:{},futureSeeds:[],memories:[],lastEvent:null,debugEligible:[],debugLastRoll:null,ticksWithoutEvent:0,eventQueue:[],activeEvent:null,eventDefinitions:null,selectedEventId:'',eventFilters:{search:'',category:'ALL',severity:'ALL'},eventExportText:'',eventValidation:[],metricHistory:[]};}
-var state={family:'Moretti Family',mapName:mapCityName,islandNames:islandNames.slice(),tab:'Dashboard',mapMode:'city',day:0,time:'Morning',selected:'dockside',dirty:0,clean:0,heat:12,police:18,stopReason:'Paused manually',zoom:1,pan:{x:0,y:0},selectedBlock:'',selectedParcel:'',selectedFamilyPerson:'don',familyEstate:null,playerSafehouse:null,estateFocus:false,safehouseFocus:false,familyState:defaultFamilyState(),districts:rawDistricts.map(function(a){return{id:a[0],name:a[1],wealth:a[2],police:a[3],corruption:a[4],fear:a[5],order:a[6],control:a[7],rival:a[8]};}),messages:[],tasks:[{title:'Scout Potential Racket',status:'active',progress:1,required:3,districtId:'dockside',endDay:2,result:''}],crew:[['Grace Moretti','capo','available','Loy 83 - Vio 54 - Int 80 - Cha 76 - Stl 65 - planner, hard bargain'],['Sal Vitale','soldier','available','Loy 70 - Vio 72 - Int 51 - Cha 48 - Stl 60 - steady hands'],['Marta Bellini','associate','available','Loy 74 - Vio 30 - Int 82 - Cha 79 - Stl 58 - smooth talker, keeps books'],['Nicky Russo','soldier','available','Loy 62 - Vio 81 - Int 42 - Cha 44 - Stl 54 - feared, short fuse']],opportunities:[{title:'Backroom Gambling',type:'racket',districtId:'dockside',value:'$850-$1,400/wk',risk:'medium'}],fronts:[['Bellini Laundry','Owned - Little Italy','Clean $450/wk - Capacity $1,200 - Suspicion 18'],['Harbor Fish Market','Unowned - Dockside','Clean $300/wk - Capacity $800 - Suspicion 22']],rackets:[['Numbers Game','Dockside','$600-$950/wk - Heat +3']],rivals:[['O’Hara Outfit','Known - Vendetta 18 - Income 42','Dockside pressure, union contacts'],['The Vipers','Unknown - Vendetta 8 - Income 21','Street-level muscle, limited intel']]};
+var state={family:'Moretti Family',mapName:mapCityName,islandNames:islandNames.slice(),tab:'Dashboard',mapMode:'city',day:0,time:'Morning',selected:'dockside',dirty:0,clean:0,heat:12,police:18,stopReason:'Paused manually',zoom:1,pan:{x:0,y:0},selectedBlock:'',selectedParcel:'',selectedFamilyPerson:'don',familyEstate:null,playerSafehouse:null,estateFocus:false,safehouseFocus:false,sidebarCollapsed:true,familyState:defaultFamilyState(),districts:rawDistricts.map(function(a){return{id:a[0],name:a[1],wealth:a[2],police:a[3],corruption:a[4],fear:a[5],order:a[6],control:a[7],rival:a[8]};}),messages:[],tasks:[],crew:[],opportunities:[],fronts:[],rackets:[],rivals:[]};
 // Canonical playable-loop state. Legacy property bridges keep existing gameplay code stable.
 state=window.DeskDonGameState.attach(state);
 var families=[{id:'moretti',name:'Moretti Family',short:'M',color:'#bfc7d8',home:'player'},{id:'valente',name:'Valente Crew',short:'V',color:'#c3a46e',home:'rival'},{id:'ohara',name:'O’Hara Outfit',short:'O',color:'#7fa07a',home:'rival'},{id:'kuroda',name:'Kuroda Syndicate',short:'K',color:'#9b7aa8',home:'rival'}];
@@ -478,14 +485,14 @@ function districtProfileFromStats(wealth,police,corruption,rand){
   if(rand()>.58)return 'coastal';
   return 'industrial';
 }
-function generateProceduralCity(seed,isInitial,attempt){attempt=attempt||0;var rand=seeded(seed||('city-'+Date.now()));var usedDistrictNames={};var usedIslandNames={};state.mapName=makeMapCityName(rand);state.islandNames=[];var archetypes=[['Dockside',42,53,66],['Riverside',61,47,57],['South Yards',35,42,70],['Little Italy',58,44,72],['Financial Ward',88,74,36],['Old Town',52,48,63],['Midtown',73,58,49],['Ironworks',39,38,68],['Railhead',46,43,66],['Uptown',82,66,41],['Garden Heights',79,63,38],['Municipal Airport',69,71,44],['Red Hook',41,49,69],['Market Row',62,45,58],['Warehouse Point',38,40,73],['Theater Mile',76,57,51],['Tenement Ward',33,45,76],['Canal Quarter',55,50,62]];var islandCount=2+Math.floor(rand()*3),configs=makeIslandConfigs(islandCount,rand);mapDistricts={};var districtRows=[],idx=0,islandPolys=[];configs.forEach(function(cfg,islandIndex){var cells=variedDistrictCells(cfg,rand),parentPoly=cells.parent,polysForIsland=[];cells.forEach(function(cell){var poly=cell.poly||makeDistrictPoly(cell.x0,cell.y0,cell.x1,cell.y1,cfg,rand);if(area(poly)<2500)return;polysForIsland.push(poly);var arch=archetypes[idx%archetypes.length],id='district_'+idx,wealth=clamp(Math.round(arch[1]+(rand()-.5)*18),20,95),police=clamp(Math.round(arch[2]+(rand()-.5)*16),20,90),corruption=clamp(Math.round(arch[3]+(rand()-.5)*18),20,90),profile=districtProfileFromStats(wealth,police,corruption,rand),name=makeDistrictName(rand,profile,usedDistrictNames),label=name.split(' ').slice(0,2).join(' '),ce=centroid(poly);mapDistricts[id]={island:'Island '+(islandIndex+1),label:label,points:pointsToString(poly),cx:Math.round(ce.x),cy:Math.round(ce.y)};districtRows.push([id,name,wealth,police,corruption,clamp(Math.round(8+rand()*34),5,48),clamp(Math.round(35+rand()*45),20,85),clamp(Math.round(rand()*18),0,28),clamp(Math.round(12+rand()*36),5,60)]);idx++;});islandPolys.push({districts:polysForIsland,parent:parentPoly||polysForIsland[0]});});if(districtRows.length<6){var fallbackRand=seeded(seed+'-fallback');while(districtRows.length<6){var n=districtRows.length,fx=180+(n%3)*260+(fallbackRand()-.5)*40,fy=220+Math.floor(n/3)*230+(fallbackRand()-.5)*40,fw=150+fallbackRand()*80,fh=130+fallbackRand()*80,fpoly=[{x:fx,y:fy},{x:fx+fw,y:fy},{x:fx+fw,y:fy+fh},{x:fx,y:fy+fh}],fid='district_'+n,fname=makeDistrictName(rand,'mixed',usedDistrictNames),fce=centroid(fpoly);mapDistricts[fid]={island:'Fallback Island',label:fname.split(' ').slice(0,2).join(' '),points:pointsToString(fpoly),cx:Math.round(fce.x),cy:Math.round(fce.y)};districtRows.push([fid,fname,50,50,55,18,50,0,25]);islandPolys.push({districts:[fpoly],parent:fpoly});}}
+function generateProceduralCity(seed,isInitial,attempt){attempt=attempt||0;if(!attempt&&typeof clearDistrict3dRootCache==='function')clearDistrict3dRootCache();var rand=seeded(seed||('city-'+Date.now()));var usedDistrictNames={};var usedIslandNames={};state.mapName=makeMapCityName(rand);state.islandNames=[];var archetypes=[['Dockside',42,53,66],['Riverside',61,47,57],['South Yards',35,42,70],['Little Italy',58,44,72],['Financial Ward',88,74,36],['Old Town',52,48,63],['Midtown',73,58,49],['Ironworks',39,38,68],['Railhead',46,43,66],['Uptown',82,66,41],['Garden Heights',79,63,38],['Municipal Airport',69,71,44],['Red Hook',41,49,69],['Market Row',62,45,58],['Warehouse Point',38,40,73],['Theater Mile',76,57,51],['Tenement Ward',33,45,76],['Canal Quarter',55,50,62]];var islandCount=2+Math.floor(rand()*3),configs=makeIslandConfigs(islandCount,rand);mapDistricts={};var districtRows=[],idx=0,islandPolys=[];configs.forEach(function(cfg,islandIndex){var cells=variedDistrictCells(cfg,rand),parentPoly=cells.parent,polysForIsland=[];cells.forEach(function(cell){var poly=cell.poly||makeDistrictPoly(cell.x0,cell.y0,cell.x1,cell.y1,cfg,rand);if(area(poly)<2500)return;polysForIsland.push(poly);var arch=archetypes[idx%archetypes.length],id='district_'+idx,wealth=clamp(Math.round(arch[1]+(rand()-.5)*18),20,95),police=clamp(Math.round(arch[2]+(rand()-.5)*16),20,90),corruption=clamp(Math.round(arch[3]+(rand()-.5)*18),20,90),profile=districtProfileFromStats(wealth,police,corruption,rand),name=makeDistrictName(rand,profile,usedDistrictNames),label=name.split(' ').slice(0,2).join(' '),ce=centroid(poly);mapDistricts[id]={island:'Island '+(islandIndex+1),label:label,points:pointsToString(poly),cx:Math.round(ce.x),cy:Math.round(ce.y)};districtRows.push([id,name,wealth,police,corruption,clamp(Math.round(8+rand()*34),5,48),clamp(Math.round(35+rand()*45),20,85),clamp(Math.round(rand()*18),0,28),clamp(Math.round(12+rand()*36),5,60)]);idx++;});islandPolys.push({districts:polysForIsland,parent:parentPoly||polysForIsland[0]});});if(districtRows.length<6){var fallbackRand=seeded(seed+'-fallback');while(districtRows.length<6){var n=districtRows.length,fx=180+(n%3)*260+(fallbackRand()-.5)*40,fy=220+Math.floor(n/3)*230+(fallbackRand()-.5)*40,fw=150+fallbackRand()*80,fh=130+fallbackRand()*80,fpoly=[{x:fx,y:fy},{x:fx+fw,y:fy},{x:fx+fw,y:fy+fh},{x:fx,y:fy+fh}],fid='district_'+n,fname=makeDistrictName(rand,'mixed',usedDistrictNames),fce=centroid(fpoly);mapDistricts[fid]={island:'Fallback Island',label:fname.split(' ').slice(0,2).join(' '),points:pointsToString(fpoly),cx:Math.round(fce.x),cy:Math.round(fce.y)};districtRows.push([fid,fname,50,50,55,18,50,0,25]);islandPolys.push({districts:[fpoly],parent:fpoly});}}
 islandPolys=fitIslandItemsToView(repelIslandItems(islandPolys.filter(function(item){return item&&item.parent&&item.parent.length;})));
 islandPolys=fitIslandItemsToView(repelIslandItems(islandPolys));
 state.islandNames=islandPolys.map(function(_,i){return makeIslandName(rand,i,usedIslandNames);});
 mapDistricts={};districtRows=[];idx=0;islandPolys.forEach(function(item,islandIndex){item.districts.forEach(function(poly){var arch=archetypes[idx%archetypes.length],id='district_'+idx,wealth=clamp(Math.round(arch[1]+(rand()-.5)*18),20,95),police=clamp(Math.round(arch[2]+(rand()-.5)*16),20,90),corruption=clamp(Math.round(arch[3]+(rand()-.5)*18),20,90),profile=districtProfileFromStats(wealth,police,corruption,rand),name=makeDistrictName(rand,profile,usedDistrictNames),label=name.split(' ').slice(0,2).join(' '),ce=centroid(poly);mapDistricts[id]={island:'Island '+(islandIndex+1),label:label,points:pointsToString(poly),cx:Math.round(ce.x),cy:Math.round(ce.y)};districtRows.push([id,name,wealth,police,corruption,clamp(Math.round(8+rand()*34),5,48),clamp(Math.round(35+rand()*45),20,85),clamp(Math.round(rand()*18),0,28),clamp(Math.round(12+rand()*36),5,60)]);idx++;});});
 islandMasses=islandPolys.map(function(item){return coastlineFromDistricts(item.districts,rand);});mapBridges=[];var bridgeSegments=[];for(var bi=0;bi<islandPolys.length-1;bi++){if(!islandPolys[bi]||!islandPolys[bi+1])continue;var aHull=convexHull(islandPolys[bi].parent||[].concat.apply([],islandPolys[bi].districts||[])),bHull=convexHull(islandPolys[bi+1].parent||[].concat.apply([],islandPolys[bi+1].districts||[])),pair=nearestPointsBetweenPolys(aHull,bHull);if(pair&&pair.d<430){var bridge=safeBridgePath(pair,islandPolys,bi,bi+1,rand,bridgeSegments);if(bridge){mapBridges.push(bridge.path);bridgeSegments.push(bridge.segment);}if(rand()>.55){var candidates=[];for(var ca=0;ca<aHull.length;ca++)for(var cb=0;cb<bHull.length;cb++){var dd=dist(aHull[ca],bHull[cb]);if(dd<500&&dd>pair.d*.82)candidates.push({a:aHull[ca],b:bHull[cb],d:dd});}candidates.sort(function(a,b){return a.d-b.d;});for(var ci=0;ci<Math.min(8,candidates.length);ci++){var bridge2=safeBridgePath(candidates[ci],islandPolys,bi,bi+1,rand,bridgeSegments);if(bridge2){mapBridges.push(bridge2.path);bridgeSegments.push(bridge2.segment);break;}}}}}
 if(districtOverlapCount()>0&&attempt<6)return generateProceduralCity('city-'+Date.now()+'-'+attempt,isInitial,attempt+1);
-state.districts=districtRows.map(function(a){return{id:a[0],name:a[1],wealth:a[2],police:a[3],corruption:a[4],fear:a[5],order:a[6],control:a[7],rival:a[8]};});state.selected=state.districts[0].id;state.selectedBlock='';state.selectedParcel='';state.familyAssignments=null;state.familyEstate=null;state.playerSafehouse=null;state.playerLocation=null;state.playerSpawnInitialized=false;state.cityIdentity=null;state.estateFocus=false;state.tab='Dashboard';state.mapMode='city';state.mapTransition=null;state.stopReason=isInitial?'Paused manually':'Generated city seed: '+seed;layouts={};if(!state.mapName)state.mapName=mapCityName;
+state.districts=districtRows.map(function(a){return{id:a[0],name:a[1],wealth:a[2],police:a[3],corruption:a[4],fear:a[5],order:a[6],control:a[7],rival:a[8]};});state.selected=state.districts[0].id;state.selectedIsland=districtIsland(state.selected);state.selectedBlock='';state.selectedParcel='';state.familyAssignments=null;state.familyEstate=null;state.playerSafehouse=null;state.playerLocation=null;state.playerSpawnInitialized=false;state.cityIdentity=null;state.estateFocus=false;state.tab='Dashboard';state.mapMode='city';state.mapTransition=null;state.stopReason=isInitial?'Paused manually':'Generated city seed: '+seed;layouts={};if(!state.mapName)state.mapName=mapCityName;
 if(!state.islandNames)state.islandNames=islandNames.slice();
 runParcelTests();ensurePlayerHousingAssignments();render();}
 var parcelSizeWeights={TINY:1,SMALL:2,MEDIUM:4,LARGE:8,HUGE:16};
@@ -601,7 +608,7 @@ function makeParcel(polygon,blockId,index,d,rand,frontage,depth,accessKind){
   var values=applyParcelLocationModifiers(type,frontage,depth,accessKind,d);
   var ownership=type.owner||'Civilian',faction=ownership==='Government'?'government':ownership==='Independent Criminal'?'independent_criminal':ownership==='Religious Institution'?'religious':ownership==='Union'?'union':ownership==='Bank'?'bank':'neutral';
   var size=ar>2600?4:ar>1600?3:ar>800?2:1,propertyValue=Math.round((values.land+values.property)*Math.max(1,parcelSizeWeights[type.size]||size)*12*(.85+rand()*.3));
-  return{id:blockId+'_p'+index,blockId:blockId,label:bn+'-'+(index+1),kind:type.subtype,displayName:type.subtype,category:type.category,sector:type.sector,subtype:type.subtype,description:type.desc,legality:type.legality,ownershipType:ownership,defaultFactionControl:faction,polygon:cleanPoly(polygon),size:size,sizeClass:type.size,footprintWeight:parcelSizeWeights[type.size]||size,value:propertyValue,propertyValue:propertyValue,landValue:values.land,dailyLegalIncome:values.legalIncome,monthlyLegalIncome:values.legalIncome*30,illegalIncomePotential:values.illegal,traffic:values.traffic,visibility:values.visibility,security:values.security,wealthLevel:values.wealth,crimeLevel:values.crime,heat:values.policeHeat,policeHeat:values.policeHeat,federalHeat:values.federalHeat,corruptionPotential:values.corruption,extortionValue:values.extortion,launderingValue:values.laundering,recruitmentValue:values.recruitment,intelligenceValue:values.intelligence,strategicValue:values.strategic,communityImportance:values.community,politicalImportance:values.political,witnessDensity:values.witness,informantRisk:values.informant,raidDifficulty:values.raid,upgradePotential:values.upgrade,decayRisk:values.decay,fireRisk:values.fire,violenceRisk:values.violence,occupiedBy:faction,familyId:'',isHQ:false,isFront:false,isSafehouse:type.subtype==='Safehouse',hasHiddenOperation:type.legality==='Hidden Illegal',hiddenOperationType:type.category==='Criminal'?type.subtype:'',blockType:blockType,shape:shape,frontage:Math.round(frontage),depth:Math.round(depth),streetAccess:true,accessKind:accessKind};
+  return{id:blockId+'_p'+index,blockId:blockId,districtId:d.id,label:bn+'-'+(index+1),kind:type.subtype,displayName:type.subtype,category:type.category,sector:type.sector,subtype:type.subtype,description:type.desc,legality:type.legality,ownershipType:ownership,defaultFactionControl:faction,polygon:cleanPoly(polygon),size:size,sizeClass:type.size,footprintWeight:parcelSizeWeights[type.size]||size,value:propertyValue,propertyValue:propertyValue,landValue:values.land,dailyLegalIncome:values.legalIncome,monthlyLegalIncome:values.legalIncome*30,illegalIncomePotential:values.illegal,traffic:values.traffic,visibility:values.visibility,security:values.security,wealthLevel:values.wealth,crimeLevel:values.crime,heat:values.policeHeat,policeHeat:values.policeHeat,federalHeat:values.federalHeat,corruptionPotential:values.corruption,extortionValue:values.extortion,launderingValue:values.laundering,recruitmentValue:values.recruitment,intelligenceValue:values.intelligence,strategicValue:values.strategic,communityImportance:values.community,politicalImportance:values.political,witnessDensity:values.witness,informantRisk:values.informant,raidDifficulty:values.raid,upgradePotential:values.upgrade,decayRisk:values.decay,fireRisk:values.fire,violenceRisk:values.violence,occupiedBy:faction,familyId:'',isHQ:false,isFront:false,isSafehouse:type.subtype==='Safehouse',hasHiddenOperation:type.legality==='Hidden Illegal',hiddenOperationType:type.category==='Criminal'?type.subtype:'',blockType:blockType,shape:shape,frontage:Math.round(frontage),depth:Math.round(depth),streetAccess:true,accessKind:accessKind};
 }
 function ensureFamilyAssignments(){
   if(state.familyAssignments)return state.familyAssignments;
@@ -769,6 +776,7 @@ function assignPlayerSafehouse(layout,d){
 function clearSpecialBuildingFlags(p){
   if(!p)return;
   p.isPlayerSafehouse=false;
+  p.isSafehouse=false;
   p.isFamilyEstate=false;
   if(p.subtype==='Family Estate')p.subtype='Residence';
   if(p.kind==='Family Estate')p.kind='Residence';
@@ -1136,14 +1144,14 @@ function islandContextDistrictsForDistrict(d){
       roads:(otherLayout.roads||[]).map(function(r,i){return Object.assign({},r,{id:'context-'+other.id+'-'+(r.id||i),a:districtLocalPointToDistrictLocal(other.id,d.id,r.a),b:districtLocalPointToDistrictLocal(other.id,d.id,r.b)});}),
       blocks:(otherLayout.blocks||[]).map(function(b){
         return{
-          id:'context-'+b.id,
+          id:b.id,
           label:b.label,
           polygon:districtLocalPolyToDistrictLocal(other.id,d.id,b.polygon),
           pressure:b.pressure,
           parcels:(b.parcels||[]).map(function(p){
             return Object.assign({},p,{
-              id:'context-'+p.id,
-              blockId:'context-'+(p.blockId||b.id),
+              id:p.id,
+              blockId:p.blockId||b.id,
               polygon:districtLocalPolyToDistrictLocal(other.id,d.id,p.polygon),
               buildingPolygon:p.buildingPolygon?districtLocalPolyToDistrictLocal(other.id,d.id,p.buildingPolygon):p.buildingPolygon
             });
@@ -1153,7 +1161,65 @@ function islandContextDistrictsForDistrict(d){
     };
   });
 }
+function bridgeLandingsForIsland(focusDistrict,islandId){
+  var islandItem=cityIslands().find(function(item){return item.id===islandId;}),coastPoly=parseSvgPathPolygon((islandItem&&islandMasses&&islandMasses[islandItem.index])||'');
+  if(coastPoly.length<3)return[];
+  var landings=[];
+  (mapBridges||[]).forEach(function(pathText,i){
+    var pts=parseSvgPathPolygon(pathText);
+    if(pts.length<2)return;
+    [pts[0],pts[pts.length-1]].forEach(function(pt,j){
+      var belongs=pointIn(pt,coastPoly)||pointDistanceToPolygon(pt,coastPoly)<110;
+      if(!belongs)return;
+      var snapped=nearestPointOnPolygon(pt,coastPoly)||pt;
+      landings.push({id:'island-bridge-'+i+'-'+j,label:'Bridge '+(i+1),point:mapPointToDistrictLocal(focusDistrict.id,snapped)});
+    });
+  });
+  return landings;
+}
+function island3dLayoutForDistrict(d,l){
+  var islandId=currentIslandId(),item=cityIslands().find(function(island){return island.id===islandId;});
+  var coastPath=item&&islandMasses&&islandMasses[item.index]?islandMasses[item.index]:'';
+  var coastPoly=parseSvgPathPolygon(coastPath).map(function(p){return mapPointToDistrictLocal(d.id,p);});
+  if(coastPoly.length<3){
+    var districtPolys=islandDistricts(islandId).map(function(other){var s=mapDistricts[other.id];return s?parsePoints(s.points):[];}).reduce(function(all,poly){return all.concat(poly);},[]);
+    coastPoly=convexHull(districtPolys).map(function(p){return mapPointToDistrictLocal(d.id,p);});
+  }
+  var blocks=[],roads=[],landings=bridgeLandingsForIsland(d,islandId);
+  islandDistricts(islandId).forEach(function(other){
+    var otherLayout=other.id===d.id?l:layout(other),same=other.id===d.id;
+    (otherLayout.roads||[]).forEach(function(r,i){
+      roads.push(Object.assign({},r,{
+        id:(same?'island-focus-':'island-')+other.id+'-'+(r.id||i),
+        districtId:other.id,
+        a:same?r.a:districtLocalPointToDistrictLocal(other.id,d.id,r.a),
+        b:same?r.b:districtLocalPointToDistrictLocal(other.id,d.id,r.b)
+      }));
+    });
+    inheritedRoadsForDistrict(other,d.id).forEach(function(r,i){roads.push(Object.assign({},r,{id:'island-inherited-'+other.id+'-'+i,districtId:other.id}));});
+    (otherLayout.blocks||[]).forEach(function(b){
+      blocks.push({
+        id:b.id,
+        label:b.label,
+        districtId:other.id,
+        polygon:same?b.polygon:districtLocalPolyToDistrictLocal(other.id,d.id,b.polygon),
+        pressure:b.pressure,
+        parcels:(b.parcels||[]).map(function(p){
+          return Object.assign({},p,{
+            id:p.id,
+            blockId:p.blockId||b.id,
+            districtId:p.districtId||other.id,
+            polygon:same?p.polygon:districtLocalPolyToDistrictLocal(other.id,d.id,p.polygon),
+            buildingPolygon:p.buildingPolygon?(same?p.buildingPolygon:districtLocalPolyToDistrictLocal(other.id,d.id,p.buildingPolygon)):p.buildingPolygon
+          });
+        })
+      });
+    });
+  });
+  return{outerPolygon:coastPoly.length>=3?coastPoly:l.outerPolygon,roads:roads,blocks:blocks,bridgeLandings:landings};
+}
 function pointDistanceToPolygon(pt,poly){if(!poly||poly.length<2)return Infinity;var best=Infinity;for(var i=0;i<poly.length;i++){var a=poly[i],b=poly[(i+1)%poly.length],dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy,t=len2?clamp(((pt.x-a.x)*dx+(pt.y-a.y)*dy)/len2,0,1):0,q={x:a.x+dx*t,y:a.y+dy*t};best=Math.min(best,dist(pt,q));}return best;}
+function nearestPointOnPolygon(pt,poly){if(!poly||poly.length<2)return null;var best=null;for(var i=0;i<poly.length;i++){var a=poly[i],b=poly[(i+1)%poly.length],dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy,t=len2?clamp(((pt.x-a.x)*dx+(pt.y-a.y)*dy)/len2,0,1):0,q={x:a.x+dx*t,y:a.y+dy*t},d=dist(pt,q);if(!best||d<best.d)best={x:q.x,y:q.y,d:d};}return best?{x:best.x,y:best.y}:null;}
 function bridgeLandingsForDistrict(d){
   var s=mapDistricts[d.id],poly=s?parsePoints(s.points):[];
   if(!poly.length)return[];
@@ -1186,7 +1252,18 @@ function ensureTimeState(){if(state.timeDrawerOpen===undefined)state.timeDrawerO
 function gameDateObj(){return new Date(1931,0,5+(state.day||0));}
 function gameDate(){var d=gameDateObj();return d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'});}
 function isCollectionRushDay(){return gameDateObj().getDay()===0;}
-function timeDrawerView(){ensureTimeState();var active=timeBlocks.indexOf(state.time);if(active<0)active=0;var moving=!!state.timeMoving,speed=state.timeSpeed||1,minutePct=(state.timeMinuteOfDay/1440)*100;return '<div class="time-drawer '+(state.timeDrawerOpen?'open':'')+' '+(moving?'moving':'')+'"><div class="time-drawer-inner"><section><small>Calendar</small><h3>'+esc(gameDate())+'</h3><p>Day '+state.day+' - '+esc(clockText())+' - '+esc(state.time)+' / '+esc(dayMoments[state.time]||'Moment')+'</p></section><div class="time-track">'+timeBlocks.map(function(t,i){return'<span class="'+(i===active?'active':'')+'"><b>'+esc(t)+'</b><em>'+esc(dayMoments[t])+'</em></span>';}).join('')+'</div><section class="time-status"><small>'+esc(moving?'Time moving':'Time held')+'</small><strong>'+esc(moving?'Right-click or Escape to stop':'Click Move time to continue')+'</strong><div class="time-pulse" style="--minute:'+minutePct+'%;--period-ms:'+((state.timeMoveSpeed||120)*60)+'ms"></div></section><div class="time-drawer-actions speed-actions">'+TIME_SPEED_OPTIONS.map(function(n){return'<button class="'+(speed===n?'active':'')+'" data-action="timeSpeed" data-speed="'+n+'">'+timeSpeedLabel(n)+'</button>';}).join('')+'<button data-action="stepTime">Step</button><button data-action="stopTime">'+(moving?'Stop':'Close')+'</button></div></div></div>';}
+function timeDrawerView(){
+  ensureTimeState();
+  var active=timeBlocks.indexOf(state.time);if(active<0)active=0;
+  var moving=!!state.timeMoving,speed=state.timeSpeed||1;
+  function controls(paused){
+    var toggle='<button class="time-toggle '+(paused?'continue':'pause')+'" data-time-toggle data-action="'+(paused?'moveTime':'pauseTime')+'">'+(paused?'Continue':'Pause')+'</button>';
+    var speeds=TIME_SPEED_OPTIONS.map(function(n){return'<button class="'+(speed===n?'active':'')+'" data-action="timeSpeed" data-speed="'+n+'">'+timeSpeedLabel(n)+'</button>';}).join('');
+    return '<div class="time-primary-controls"><div class="time-drawer-actions speed-actions">'+speeds+'</div>'+toggle+'</div>';
+  }
+  var track=timeBlocks.map(function(t,i){return'<span data-time-track class="'+(i===active?'active':'')+'"><b>'+esc(t)+'</b><em>'+esc(dayMoments[t])+'</em></span>';}).join('');
+  return '<div class="time-drawer time-layer '+(moving?'moving open':'paused')+'"><div class="time-chip compact-time"><div class="time-drawer-inner"><section class="time-compact-date"><small data-time-date>'+esc(gameDate())+'</small><b data-time-clock>'+esc(clockText())+'</b></section>'+controls(true)+'</div></div><div class="time-panel expanded-time"><div class="time-drawer-inner"><section class="time-compact-date expanded-date"><small data-time-date>'+esc(gameDate())+'</small><b data-time-clock>'+esc(clockText())+'</b></section><div class="time-track">'+track+'</div><section class="time-status"><small data-time-state>Time moving</small><strong data-time-detail>Use Pause to hold the city clock</strong></section>'+controls(false)+'</div></div></div>';
+}
 function clearTimeMoveTimer(){if(timeMoveTimer){clearTimeout(timeMoveTimer);timeMoveTimer=null;}}
 function stopMovingTime(reason){ensureTimeState();state.timeMoving=false;clearTimeMoveTimer();if(reason)state.stopReason=reason;}
 function recalcTimeMoveSpeed(){ensureTimeState();}
@@ -1197,23 +1274,93 @@ function updateMountedRacketVisuals(){var root=document.getElementById('district
 function refreshSideStatus(){var el=document.querySelector('.side-status');if(!el)return;var wrap=document.createElement('div');wrap.innerHTML=sideStatusView();var fresh=wrap.firstElementChild;if(fresh)el.replaceWith(fresh);}
 function materializePlayerMovementPartial(){if(!state.timeMoving||!state.playerMovement)return;var elapsed=Math.max(0,Date.now()-Number(state.timeStepStartedAt||Date.now())),period=Math.max(1,Number(state.timeMoveSpeed||1250)),partial=Math.min(TIME_STEP_MINUTES,(elapsed/period)*TIME_STEP_MINUTES);if(partial>0)state.playerMovement.remainingMinutes=Math.max(0,(state.playerMovement.remainingMinutes||0)-partial);state.timeStepStartedAt=Date.now();}
 var lastLiveTimeUiPaint=0;
-function refreshLiveTimeUI(force){ensureTimeState();var now=Date.now();updateMountedDistrictTime();if(!force&&state.timeMoving&&now-lastLiveTimeUiPaint<180)return;lastLiveTimeUiPaint=now;var drawer=document.querySelector('.time-drawer'),active=timeBlocks.indexOf(state.time),minutePct=(state.timeMinuteOfDay/1440)*100;if(drawer){drawer.classList.toggle('open',!!state.timeDrawerOpen);drawer.classList.toggle('moving',!!state.timeMoving);var dateTitle=drawer.querySelector('section h3'),dateLine=drawer.querySelector('section p'),track=drawer.querySelectorAll('.time-track span'),statusSmall=drawer.querySelector('.time-status small'),statusStrong=drawer.querySelector('.time-status strong'),pulse=drawer.querySelector('.time-pulse');if(dateTitle)dateTitle.textContent=gameDate();if(dateLine)dateLine.textContent='Day '+state.day+' - '+clockText()+' - '+state.time+' / '+(dayMoments[state.time]||'Moment');track.forEach(function(node,i){node.classList.toggle('active',i===active);});if(statusSmall)statusSmall.textContent=state.timeMoving?'Time moving':'Time held';if(statusStrong)statusStrong.textContent=state.timeMoving?'Right-click or Escape to stop':'Click Move time to continue';if(pulse){pulse.style.setProperty('--minute',minutePct+'%');pulse.style.setProperty('--period-ms',((state.timeMoveSpeed||120)*60)+'ms');}drawer.querySelectorAll('.speed-actions button[data-speed]').forEach(function(btn){btn.classList.toggle('active',parseInt(btn.getAttribute('data-speed')||'1',10)===(state.timeSpeed||1));});}var header=document.querySelector('.top');if(header){var small=header.querySelector('small'),title=header.querySelector('h1'),move=header.querySelector('.move-time-button');if(small)small.textContent=gameDate();if(title)title.textContent='Day '+state.day+' - '+clockText();if(move)move.textContent=state.timeMoving?'Moving time...':'Move time';}}
-function advanceClockMinute(opts){opts=opts||{};ensureTimeState();var oldPeriod=state.time,oldDay=state.day||0,oldMinute=state.timeMinuteOfDay,step=opts.minutes||TIME_STEP_MINUTES;state.timeMinuteOfDay=(state.timeMinuteOfDay+step)%1440;state.timeStepStartedAt=Date.now();processPlayerTimedWork(step);if(oldMinute+step>=1440){state.day++;state.heat++;}state.time=timePeriodFromMinute(state.timeMinuteOfDay);if(state.time!==oldPeriod||state.day!==oldDay){state.tasks.forEach(function(t){if(t.status==='active')t.progress=Math.min(t.required,t.progress+1);});advanceProvidenceTick(false);state.stopReason=state.narratorState&&state.narratorState.lastEvent?'Providence moved: '+state.narratorState.lastEvent.title:'Time moving: '+state.time;if(isCollectionRushDay())state.stopReason='Collection Rush: Sunday envelopes are ready.';}if(state.day!==oldDay&&state.district3d&&state.district3d.enabled)updateMountedRacketVisuals();if(opts.render)render();else refreshLiveTimeUI(true);}
-function scheduleTimeMove(){clearTimeMoveTimer();if(!state.timeMoving)return;recalcTimeMoveSpeed();var interval=Math.max(16,state.timeMoveSpeed||120),minutes=Math.max(TIME_STEP_MINUTES,Math.round(interval/Math.max(1,state.timeMoveSpeed||120))*TIME_STEP_MINUTES);timeMoveTimer=setTimeout(function(){if(!state.timeMoving)return;advanceClockMinute({minutes:minutes});scheduleTimeMove();},interval);}
+function refreshLiveTimeUI(force){ensureTimeState();var now=Date.now();updateMountedDistrictTime();if(!force&&state.timeMoving&&now-lastLiveTimeUiPaint<180)return;lastLiveTimeUiPaint=now;var drawer=document.querySelector('.time-drawer');if(drawer&&!drawer.classList.contains('time-layer')){drawer.outerHTML=timeDrawerView();drawer=document.querySelector('.time-drawer');}if(drawer){drawer.classList.toggle('open',!!state.timeMoving);drawer.classList.toggle('moving',!!state.timeMoving);drawer.classList.toggle('paused',!state.timeMoving);var active=timeBlocks.indexOf(state.time);if(active<0)active=0;drawer.querySelectorAll('[data-time-date]').forEach(function(node){node.textContent=gameDate();});drawer.querySelectorAll('[data-time-clock]').forEach(function(node){node.textContent=clockText();});drawer.querySelectorAll('[data-time-period]').forEach(function(node){node.textContent=state.time+' / Day '+state.day;});drawer.querySelectorAll('[data-time-line]').forEach(function(node){node.textContent='Day '+state.day+' - '+clockText()+' - '+state.time+' / '+(dayMoments[state.time]||'Moment');});drawer.querySelectorAll('[data-time-state]').forEach(function(node){node.textContent=state.timeMoving?'Time moving':'Time held';});drawer.querySelectorAll('[data-time-detail]').forEach(function(node){node.textContent=state.timeMoving?'Use Pause to hold the city clock':'Click Continue to move time';});drawer.querySelectorAll('[data-time-track]').forEach(function(node,i){node.classList.toggle('active',i===active);});drawer.querySelectorAll('.speed-actions button[data-speed]').forEach(function(btn){btn.classList.toggle('active',parseInt(btn.getAttribute('data-speed')||'1',10)===(state.timeSpeed||1));});drawer.querySelectorAll('[data-time-toggle]').forEach(function(toggle){var compact=!!(toggle.closest&&toggle.closest('.time-chip'));toggle.textContent=compact?'Continue':(state.timeMoving?'Pause':'Continue');toggle.setAttribute('data-action',compact?'moveTime':(state.timeMoving?'pauseTime':'moveTime'));toggle.classList.toggle('pause',!compact&&!!state.timeMoving);toggle.classList.toggle('continue',compact||!state.timeMoving);});}}
+function advanceClockMinute(opts){opts=opts||{};ensureTimeState();var oldPeriod=state.time,oldDay=state.day||0,oldMinute=state.timeMinuteOfDay,step=opts.minutes||TIME_STEP_MINUTES;state.timeMinuteOfDay=(state.timeMinuteOfDay+step)%1440;state.timeStepStartedAt=Date.now();processPlayerTimedWork(step);if(oldMinute+step>=1440){state.day++;state.heat++;}state.time=timePeriodFromMinute(state.timeMinuteOfDay);if(state.time!==oldPeriod||state.day!==oldDay){state.tasks.forEach(function(t){if(t.status==='active')t.progress=Math.min(t.required,t.progress+1);});advanceProvidenceTick(false);state.stopReason=state.narratorState&&state.narratorState.lastEvent?'Providence moved: '+state.narratorState.lastEvent.title:'Time moving: '+state.time;if(isCollectionRushDay())state.stopReason='Collection Rush: Sunday envelopes are ready.';}if(state.day!==oldDay&&state.district3d&&state.district3d.enabled)updateMountedRacketVisuals();if(opts.render)render();else refreshLiveTimeUI(!!opts.forceUi);}
+function scheduleTimeMove(){clearTimeMoveTimer();if(!state.timeMoving)return;recalcTimeMoveSpeed();var ideal=Math.max(.5,state.timeMoveSpeed||120),speed=state.timeSpeed||1,minInterval=speed>=100?80:speed>1?40:ideal,interval=Math.max(16,minInterval,ideal),minutes=Math.max(TIME_STEP_MINUTES,Math.round(interval/ideal)*TIME_STEP_MINUTES);timeMoveTimer=setTimeout(function(){if(!state.timeMoving)return;advanceClockMinute({minutes:minutes});scheduleTimeMove();},interval);}
 function startMovingTime(){ensureTimeState();state.timeStepStartedAt=Date.now();state.timeMoving=true;state.stopReason='Time is moving.';var drawer=document.querySelector('.time-drawer');if(!drawer){state.timeDrawerOpen=false;render();requestAnimationFrame(function(){state.timeDrawerOpen=true;refreshLiveTimeUI(true);updateMountedDistrictTime();scheduleTimeMove();});return;}state.timeDrawerOpen=true;refreshLiveTimeUI(true);updateMountedDistrictTime();scheduleTimeMove();}
 function setTimeSpeed(speed){ensureTimeState();materializePlayerMovementPartial();state.timeSpeed=normalizeTimeSpeed(speed);recalcTimeMoveSpeed();if(state.timeMoving)scheduleTimeMove();refreshLiveTimeUI(true);}
 function startCommandTime(){ensureTimeState();materializePlayerMovementPartial();state.timeSpeed=1;state.timeStepStartedAt=Date.now();state.timeMoving=true;state.timeDrawerOpen=true;recalcTimeMoveSpeed();refreshLiveTimeUI(true);updateMountedDistrictTime();scheduleTimeMove();}
-function pauseCommandTime(reason){stopMovingTime(reason||'Action complete.');state.timeDrawerOpen=false;refreshLiveTimeUI(true);updateMountedDistrictTime();}
-function closeTimeDrawer(){stopMovingTime('Time stopped.');state.timeDrawerOpen=false;refreshLiveTimeUI(true);}
+function collapseTimeDrawerAnimated(reason){
+  stopMovingTime(reason||'Time stopped.');
+  state.timeDrawerOpen=false;
+  updateMountedDistrictTime();
+  var drawer=document.querySelector('.time-drawer.time-layer');
+  if(drawer){
+    drawer.classList.remove('moving','open');
+    drawer.classList.add('paused');
+    refreshLiveTimeUI(true);
+    return;
+  }
+  refreshLiveTimeUI(true);
+}
+function pauseCommandTime(reason){collapseTimeDrawerAnimated(reason||'Action complete.');}
+function closeTimeDrawer(){collapseTimeDrawerAnimated('Time stopped.');}
 function districtIsland(id){return mapDistricts[id]?mapDistricts[id].island:'';}
+function cityIslands(){
+  var byId={},items=[];
+  state.districts.forEach(function(d){
+    var meta=mapDistricts[d.id],id=meta?meta.island:'City';
+    if(!byId[id]){
+      var index=Object.keys(byId).length;
+      byId[id]={id:id,index:index,displayName:(state.islandNames&&state.islandNames[index])||id,districts:[]};
+      items.push(byId[id]);
+    }
+    byId[id].districts.push(d);
+  });
+  return items;
+}
+function currentIslandId(){
+  var id=state.selectedIsland||districtIsland(state.selected),items=cityIslands();
+  if(items.some(function(item){return item.id===id;}))return id;
+  return (items[0]&&items[0].id)||'';
+}
+function islandDisplayName(id){
+  var item=cityIslands().find(function(island){return island.id===id;});
+  return item?(item.displayName||item.id):(id||'City island');
+}
+function islandDistricts(id){
+  var item=cityIslands().find(function(island){return island.id===id;});
+  return item?item.districts:[];
+}
+function islandFocusDistrict(id){
+  var districts=islandDistricts(id);
+  if(!districts.length)return state.districts[0]||null;
+  if(districtIsland(state.selected)===id)return district(state.selected);
+  var safe=findPlayerSafehouse&&findPlayerSafehouse();
+  if(safe&&safe.districtId&&districtIsland(safe.districtId)===id)return district(safe.districtId);
+  var estate=findFamilyEstate&&findFamilyEstate();
+  if(estate&&estate.districtId&&districtIsland(estate.districtId)===id)return district(estate.districtId);
+  return districts[0];
+}
 var MAP_TRANSITION_MS=1350;
-function setTab(t){state.tab=t;if(t==='Family'){state.familySubtab='Blood Family';state.selectedFamilyProfile='player';}if(t!=='City'&&t!=='Dashboard'){state.mapMode='city';state.estateFocus=false;state.safehouseFocus=false;}state.mapTransition=null;render();}
-function finishDistrictTransition(){state.mapMode='district';state.mapTransition=null;render();}
+function normalizeTab(t){
+  if(t==='District')return'City';
+  if(t==='Calendar'||t==='Tasks'||t==='Opportunities'||t==='Fronts'||t==='Rackets'||t==='Rivals'||t==='Crew')return'Dashboard';
+  return tabs.some(function(tab){return tab.id===t;})?t:'Dashboard';
+}
+function setTab(t){
+  t=normalizeTab(t);
+  state.tab=t;
+  state.mapTransition=null;
+  if(t==='Family'){state.familySubtab='Blood Family';state.selectedFamilyProfile='player';}
+  if(t==='Dashboard'){
+    state.mapMode='city';state.estateFocus=false;state.safehouseFocus=false;
+  }else if(t==='City'){
+    state.mapMode='district';state.estateFocus=false;state.safehouseFocus=false;
+    state.selectedIsland=currentIslandId();
+    state.district3d={enabled:true,districtId:state.selected,islandId:state.selectedIsland,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
+  }else{
+    state.mapMode='city';state.estateFocus=false;state.safehouseFocus=false;
+  }
+  render();
+}
+function finishDistrictTransition(){state.mapMode='district';state.mapTransition=null;state.selectedIsland=currentIslandId();render();}
 function finishCityReturn(){state.mapTransition=null;render();}
 function focusDistrictInView(id,enteringName){
   if(!id||id===state.selected)return;
   var previousDistrict3d=state.district3d||{};
   state.estateFocus=false;
+  state.selectedIsland=districtIsland(id)||state.selectedIsland;
   state.selected=id;
   state.mapMode='district';
   state.tab=state.tab==='City'?'City':'District';
@@ -1223,7 +1370,7 @@ function focusDistrictInView(id,enteringName){
   state.selectedBlock='';
   state.selectedParcel='';
   state.selected3dParcel=null;
-  state.district3d={enabled:true,districtId:id,seed:previousDistrict3d.seed||0,enteringName:enteringName||district(id).name};
+  state.district3d={enabled:true,districtId:id,islandId:state.selectedIsland,seed:previousDistrict3d.seed||0,enteringName:enteringName||district(id).name};
   render();
   setTimeout(function(){
     if(state.selected!==id||!state.district3d||state.district3d.districtId!==id)return;
@@ -1231,7 +1378,40 @@ function focusDistrictInView(id,enteringName){
     document.querySelectorAll('#district-three-root .district-three-entering').forEach(function(el){el.remove();});
   },1450);
 }
-function selectDistrict(id){if(state.mapTransition)return;state.estateFocus=false;state.selected=id;state.mapMode='city';state.zoom=1;state.pan={x:0,y:0};state.selectedBlock='';state.selectedParcel='';state.mapTransition={id:id,type:'enter',started:Date.now()};render();setTimeout(finishDistrictTransition,MAP_TRANSITION_MS);}
+function selectDistrict(id){if(state.mapTransition)return;state.estateFocus=false;state.selectedIsland=districtIsland(id)||state.selectedIsland;state.selected=id;state.mapMode='city';state.zoom=1;state.pan={x:0,y:0};state.selectedBlock='';state.selectedParcel='';state.mapTransition={id:id,island:state.selectedIsland,type:'enter',started:Date.now()};render();setTimeout(finishDistrictTransition,MAP_TRANSITION_MS);}
+function focusIsland(id){
+  if(state.mapTransition)return;
+  var focus=islandFocusDistrict(id);
+  if(!focus)return;
+  if(state.selectedIsland===id&&state.selected===focus.id&&state.mapMode==='city'&&!state.estateFocus&&!state.safehouseFocus)return;
+  state.selectedIsland=id;
+  state.selected=focus.id;
+  state.mapMode='city';
+  state.estateFocus=false;
+  state.safehouseFocus=false;
+  state.selectedBlock='';
+  state.selectedParcel='';
+  state.selected3dParcel=null;
+  render();
+}
+function selectIsland(id){
+  if(state.mapTransition)return;
+  var focus=islandFocusDistrict(id);
+  if(!focus)return;
+  state.estateFocus=false;state.safehouseFocus=false;
+  state.tab='City';
+  state.selectedIsland=id;
+  state.selected=focus.id;
+  state.mapMode='city';
+  state.zoom=1;
+  state.pan={x:0,y:0};
+  state.selectedBlock='';
+  state.selectedParcel='';
+  state.selected3dParcel=null;
+  state.mapTransition={id:focus.id,island:id,type:'enter',label:islandDisplayName(id),started:Date.now()};
+  render();
+  setTimeout(finishDistrictTransition,MAP_TRANSITION_MS);
+}
 function findFamilyEstate(){
   if(state.familyEstate&&state.familyEstate.districtId&&state.familyEstate.parcelId){
     var existingLayout=layout(district(state.familyEstate.districtId));
@@ -1251,6 +1431,7 @@ function jumpToFamilyEstate(opts){
   var estate=findFamilyEstate();
   if(!estate)return;
   state.safehouseFocus=false;state.estateFocus=!!opts.focusEstate;
+  state.selectedIsland=districtIsland(estate.districtId)||state.selectedIsland;
   state.selected=estate.districtId;
   state.mapMode='district';
   state.tab=state.tab==='City'?'City':'District';
@@ -1259,7 +1440,7 @@ function jumpToFamilyEstate(opts){
   state.selectedParcel=estate.parcel.id;
   state.selected3dParcel=estate.parcel;
   state.stopReason='Moved view to the Family Estate.';
-  state.district3d={enabled:true,districtId:estate.districtId,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
+  state.district3d={enabled:true,districtId:estate.districtId,islandId:state.selectedIsland,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
   render();
 }
 function enterEstateView(){jumpToFamilyEstate({focusEstate:true});}
@@ -1293,6 +1474,7 @@ function jumpToPlayerSafehouse(){
   var safehouse=findPlayerSafehouse();
   if(!safehouse){state.stopReason='No starting safehouse could be found in the generated city.';render();return;}
   state.estateFocus=false;state.safehouseFocus=false;
+  state.selectedIsland=districtIsland(safehouse.districtId)||state.selectedIsland;
   state.selected=safehouse.districtId;
   state.mapMode='district';
   state.tab=state.tab==='City'?'City':'District';
@@ -1301,7 +1483,7 @@ function jumpToPlayerSafehouse(){
   state.selectedParcel=safehouse.parcel.id;
   state.selected3dParcel=safehouse.parcel;
   state.stopReason='Moved view to the Starting Safehouse.';
-  state.district3d={enabled:true,districtId:safehouse.districtId,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
+  state.district3d={enabled:true,districtId:safehouse.districtId,islandId:state.selectedIsland,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
   render();
 }
 function returnPlayerToSafehouse(){
@@ -1336,7 +1518,7 @@ function enterSafehouseView(){
   ensureSafehouseState();
   state.playerActionQueue=[];state.playerMovement=null;state.playerAction=null;refreshPlayerActionQueueUI();
   stopMovingTime();state.timeDrawerOpen=false;
-  state.estateFocus=false;state.safehouseFocus=true;state.selected=safe.districtId;state.selectedParcel=safe.parcel.id;state.selected3dParcel=safe.parcel;
+  state.estateFocus=false;state.safehouseFocus=true;state.selectedIsland=districtIsland(safe.districtId)||state.selectedIsland;state.selected=safe.districtId;state.selectedParcel=safe.parcel.id;state.selected3dParcel=safe.parcel;
   state.stopReason='Inside the Starting Safehouse.';
   var cached=document.querySelector('.district-control:not(.safehouse-mode)');
   if(cached){cached.dataset.safehouseCached='1';cached.style.display='none';var holder=document.createElement('div');holder.innerHTML=districtView(false);var overlay=holder.firstElementChild;if(overlay){overlay.dataset.safehouseOverlay='1';cached.after(overlay);refreshStopReasonText();refreshLiveTimeUI(true);setTimeout(function(){mountDistrict3dIfNeeded(true);},0);setTimeout(function(){if(state.safehouseFocus&&window.DeskDonSafehouse3D&&window.DeskDonSafehouse3D.startRadio){window.DeskDonSafehouse3D.startRadio();refreshSafehouseManagement();}},700);return;}}
@@ -1852,13 +2034,13 @@ function visibleCharCount(text){
 function cityTitleSvg(mapName){
   var text=String(mapName||mapCityName);
   var size=clamp(1088/(visibleCharCount(text)*.72),22,48);
-  return '<text class="map-title" x="14" y="'+(size+10).toFixed(1)+'" style="font-size:'+size.toFixed(1)+'px">'+esc(text)+'</text>';
+  return '<text class="map-title" x="14" y="'+(size+78).toFixed(1)+'" style="font-size:'+size.toFixed(1)+'px">'+esc(text)+'</text>';
 }
 function districtTransitionOverlay(){
   if(!state.mapTransition)return idleClouds();
   var d=district(state.mapTransition.id);
   var exiting=state.mapTransition.type==='exit';
-  return '<div class="map-zoom-transition '+(exiting?'exit':'enter')+'"><div class="zoom-vignette"></div><div class="cloud cloud-a"></div><div class="cloud cloud-b"></div><div class="cloud cloud-c"></div><div class="zoom-target"><small>'+(exiting?'Returning to city':'Entering district')+'</small><strong>'+esc(exiting?(state.mapName||mapCityName):d.name)+'</strong></div></div>';
+  return '<div class="map-zoom-transition '+(exiting?'exit':'enter')+'"><div class="zoom-vignette"></div><div class="cloud cloud-a"></div><div class="cloud cloud-b"></div><div class="cloud cloud-c"></div><div class="zoom-target"><small>'+(exiting?'Returning to city':'Entering island')+'</small><strong>'+esc(exiting?(state.mapName||mapCityName):(state.mapTransition.label||islandDisplayName(state.mapTransition.island)||d.name))+'</strong></div></div>';
 }
 function idleClouds(){
   if(state.mapTransition)return '';
@@ -2018,7 +2200,20 @@ function labelSlots(){
     return renderLabelGroup(label,lines,chosen,w,h,c,chosen!==c);
   }).join('');
 }
-function cityMap(){if(state.mapMode==='district')return districtView(true);var selected=district(state.selected),cityBounds=getCityBounds(),waterLayers=shallowWaterLayers(),shallowHtml=waterLayers.map(function(layer){return'<path class="coast-outer" d="'+layer.outer+'"></path><path class="coast-mid" d="'+layer.mid+'"></path><path class="coast-inner" d="'+layer.inner+'"></path>';}).join(''),islandHtml=islandMasses.map(function(p,i){return'<path fill="'+islandFillColor(i)+'" d="'+p+'"></path>';}).join(''),districtHtml=state.districts.map(function(d){var s=mapDistricts[d.id];if(!s)return'';return'<g class="map-district '+(d.id===state.selected?'selected':'')+(state.mapTransition&&state.mapTransition.id===d.id?' zoom-focus':'')+'"><polygon points="'+s.points+'" data-action="selectDistrict" data-id="'+d.id+'"></polygon></g>';}).join(''),bridgeHtml=mapBridges.map(function(p){var pts=parseSvgPathPolygon(p),a=pts[0]||{x:0,y:0},b=pts[pts.length-1]||a;return'<path class="bridge-shadow" d="'+p+'"></path><path class="bridge-main" d="'+p+'"></path><path class="bridge-core" d="'+p+'"></path><circle class="bridge-end" cx="'+a.x+'" cy="'+a.y+'" r="5"></circle><circle class="bridge-end" cx="'+b.x+'" cy="'+b.y+'" r="5"></circle>';}).join(''),labelHtml=labelSlots(),islandLabelHtml=islandNameLabels(),mapName=state.mapName||mapCityName;return'<section class="control-hub"><div class="hub-header"><div><small>Main control hub</small><h2>MAP VIEW</h2></div><div class="map-legend"><span><i class="legend-control"></i> Player control</span><span><i class="legend-rival"></i> Rival pressure</span><span><i class="legend-heat"></i> Police heat</span></div></div><div class="map-wrap"><div class="city-map-shell"><svg class="city-map '+(state.mapTransition?'zooming':'')+'" viewBox="'+cityBounds.viewBox+'"><defs><pattern id="waterGrid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M 42 0 L 0 0 0 42" fill="none" stroke="rgba(255,255,255,0.035)" stroke-width="1"/></pattern></defs><rect class="deep-water" x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'"/><rect x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'" fill="url(#waterGrid)"/><g class="coastal-water">'+shallowHtml+'</g><g class="island-masses">'+islandHtml+'</g><g class="island-labels">'+islandLabelHtml+'</g>'+districtHtml+'<g class="bridges">'+bridgeHtml+'</g>'+labelHtml+cityTitleSvg(mapName)+'</svg>'+districtTransitionOverlay()+'</div><aside class="map-dossier">'+mapDistrictDossier(selected)+'</aside></div></section>';}
+function cityMap(forceCity){
+  if(!forceCity&&state.mapMode==='district')return districtView(true);
+  var selectedIsland=currentIslandId(),cityBounds=getCityBounds(),waterLayers=shallowWaterLayers();
+  var shallowHtml=waterLayers.map(function(layer){return'<path class="coast-outer" d="'+layer.outer+'"></path><path class="coast-mid" d="'+layer.mid+'"></path><path class="coast-inner" d="'+layer.inner+'"></path>';}).join('');
+  var islands=cityIslands();
+  var islandHtml=(islandMasses||[]).map(function(p,i){
+    var item=islands[i],islandId=item?item.id:'Island '+(i+1),active=islandId===selectedIsland,transitioning=state.mapTransition&&(state.mapTransition.island===islandId||state.mapTransition.id===(item&&item.districts[0]&&item.districts[0].id));
+    return'<path class="island-mass-button '+(active?'selected':'')+(transitioning?' zoom-focus':'')+'" fill="'+islandFillColor(i)+'" d="'+p+'" data-action="focusIsland" data-island="'+esc(islandId)+'"></path>';
+  }).join('');
+  var districtHtml='';
+  var bridgeHtml=mapBridges.map(function(p){var pts=parseSvgPathPolygon(p),a=pts[0]||{x:0,y:0},b=pts[pts.length-1]||a;return'<path class="bridge-shadow" d="'+p+'"></path><path class="bridge-main" d="'+p+'"></path><path class="bridge-core" d="'+p+'"></path><circle class="bridge-end" cx="'+a.x+'" cy="'+a.y+'" r="5"></circle><circle class="bridge-end" cx="'+b.x+'" cy="'+b.y+'" r="5"></circle>';}).join('');
+  var labelHtml='',islandLabelHtml=islandNameLabels(),mapName=state.mapName||mapCityName;
+  return'<section class="control-hub map-control-hub"><div class="map-wrap"><div class="city-map-shell"><svg class="city-map '+(state.mapTransition?'zooming':'')+'" viewBox="'+cityBounds.viewBox+'"><defs><pattern id="waterGrid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M 42 0 L 0 0 0 42" fill="none" stroke="rgba(255,255,255,0.035)" stroke-width="1"/></pattern></defs><rect class="deep-water" x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'"/><rect x="'+cityBounds.x+'" y="'+cityBounds.y+'" width="'+cityBounds.w+'" height="'+cityBounds.h+'" fill="url(#waterGrid)"/><g class="coastal-water">'+shallowHtml+'</g><g class="island-masses">'+islandHtml+'</g><g class="island-labels">'+islandLabelHtml+'</g>'+districtHtml+'<g class="bridges">'+bridgeHtml+'</g>'+labelHtml+cityTitleSvg(mapName)+'</svg>'+districtTransitionOverlay()+'</div><aside class="map-dossier">'+mapIslandDossier(selectedIsland)+'</aside></div></section>';
+}
 function getCityBounds(){return{viewBox:'0 0 1120 820',x:0,y:0,w:1120,h:820};}
 function dashboard(){return cityMap()+'<div class="grid"><div class="stat"><small>Dirty Cash</small><strong>$'+money(state.dirty)+'</strong></div><div class="stat"><small>Clean Cash</small><strong>$'+money(state.clean)+'</strong></div><div class="stat"><small>Heat</small><strong>'+state.heat+'</strong></div><div class="stat"><small>Police</small><strong>'+state.police+'</strong></div>'+panel('Active Work',list(state.tasks.filter(function(t){return t.status==='active';}).map(function(t){return t.title+' - '+t.progress+'/'+t.required+' - '+district(t.districtId).name;}),'No crews assigned.'))+panel('Important Inbox',list(state.messages.filter(function(m){return !m.read&&m.importance!=='normal';}).map(function(m){return m.type+': '+m.title;}),'No urgent reports.'))+'</div>';}
 function districtParcelStats(l){
@@ -2048,6 +2243,26 @@ function mapDistrictDossier(d){
     ['Building coverage',fmtMetric(districtMetrics.buildingCoverage,'%')]
   ]);
   return identity+islandScale+selectedScale;
+}
+function mapIslandDossier(islandId){
+  islandId=islandId||currentIslandId();
+  var item=cityIslands().find(function(island){return island.id===islandId;})||cityIslands()[0],districts=item?item.districts:[],metrics=islandRealisticLandMetrics(islandId);
+  var avg=function(key){return districts.length?Math.round(districts.reduce(function(sum,d){return sum+(d[key]||0);},0)/districts.length):0;};
+  var identity='<section class="building-info-identity map-district-identity island-brief"><small>Island information</small><h3>'+esc(islandDisplayName(islandId))+'</h3><p>Single-click an island to inspect it here. Double-click the island itself to enter the 3D City View.</p></section>';
+  var islandScale=buildingSection('Island measurements',[
+    ['Total island area',fmtAreaMetric(metrics.totalArea)],
+    ['Island hectares',fmtMetric(metrics.hectares,' ha')],
+    ['Building footprint',fmtAreaMetric(metrics.buildingArea)],
+    ['Road surface',fmtAreaMetric(metrics.roadArea)],
+    ['Extra/coastal land',fmtAreaMetric(metrics.extraLand)]
+  ]);
+  return identity+islandScale;
+}
+function islandCardsView(){
+  return'<div class="districts map-islands">'+cityIslands().map(function(island){
+    var metrics=islandRealisticLandMetrics(island.id),avgWealth=island.districts.length?Math.round(island.districts.reduce(function(sum,d){return sum+(d.wealth||0);},0)/island.districts.length):0;
+    return'<button data-action="focusIsland" data-island="'+esc(island.id)+'"><h3>'+esc(island.displayName||island.id)+'</h3><span>'+esc(island.districts.length)+' districts - '+fmtAreaMetric(metrics.totalArea)+'</span><span>Double-click the island on the map to enter its 3D City View.</span></button>';
+  }).join('')+'</div>';
 }
 function parcelValueChips(p){
   if(!p)return'';
@@ -2281,8 +2496,10 @@ function playerPawnPayload(){
   var c=state.creatorCharacter||{},loc=state.playerLocation||{},move=state.playerMovement||null;
   var visual=c.visual||{},appearance=visual.appearance||{};
   var action=state.playerAction?{active:true,type:state.playerAction.type,label:state.playerAction.label||state.playerAction.type,progress:clamp(((state.playerAction.durationMinutes||0)-(state.playerAction.remainingMinutes||0))/Math.max(1,state.playerAction.durationMinutes||1),0,1)}:null;
-  var moveHere=!!(move&&move.districtId===state.selected),visibleHere=moveHere||(loc.districtId||state.selected)===state.selected;
-  var queuedStops=ensurePlayerActionQueue().filter(function(item){return(item.districtId||state.selected)===state.selected&&item.parcel&&item.parcel.id;}).map(function(item,index){return{id:item.id,parcelId:item.parcel.id,label:item.label,action:item.action,order:index+1};});
+  var islandId=currentIslandId(),sameIsland=function(id){return id&&districtIsland(id)===islandId;};
+  var moveDistrict=move&&move.districtId,locDistrict=loc.districtId||state.selected;
+  var moveHere=!!(move&&(moveDistrict===state.selected||sameIsland(moveDistrict))),visibleHere=moveHere||locDistrict===state.selected||sameIsland(locDistrict);
+  var queuedStops=ensurePlayerActionQueue().filter(function(item){var did=item.districtId||(item.parcel&&item.parcel.districtId)||state.selected;return(did===state.selected||sameIsland(did))&&item.parcel&&item.parcel.id;}).map(function(item,index){return{id:item.id,parcelId:item.parcel.id,label:item.label,action:item.action,order:index+1};});
   return{visible:visibleHere,districtId:moveHere?move.districtId:(loc.districtId||''),parcelId:moveHere?(move.fromParcelId||loc.parcelId||''):(visibleHere?(loc.parcelId||''):''),targetParcelId:moveHere?(move.targetParcelId||''):'',routeId:moveHere?(move.routeId||''):'',queuedStops:visibleHere?queuedStops:[],progress:moveHere?clamp((move.durationMinutes-(move.remainingMinutes||0))/Math.max(1,move.durationMinutes),0,1):1,moveRemainingMinutes:moveHere?Math.max(0,move.remainingMinutes||0):0,moveDurationMinutes:moveHere?Math.max(1,move.durationMinutes||1):0,moveStepMinutes:TIME_STEP_MINUTES,timeMoving:!!state.timeMoving,timePeriodMs:state.timeMoveSpeed||60000,timeStepStartedAt:state.timeStepStartedAt||Date.now(),cashFloat:visibleHere?(state.playerCashFloat||null):null,action:visibleHere?action:null,initials:((c.first&&c.last)?(c.first.charAt(0)+c.last.charAt(0)):((state.familyState&&state.familyState.don&&state.familyState.don.initials)||'PC')).toUpperCase(),skin:appearance.skin||visual.skin||'#c99a73',hair:appearance.hair||visual.hair||'#2b2018',suit:(appearance.colors&&appearance.colors[0])||visual.suit||'#242424',shirt:(appearance.colors&&appearance.colors[1])||'#d8d8d8',accent:(appearance.colors&&appearance.colors[2])||'#111111',appearance:appearance};
 }
 function parcelInDistrict(parcelId,districtId){if(!parcelId||!districtId)return null;var found=null,l=layout(district(districtId));(l.blocks||[]).some(function(block){return(block.parcels||[]).some(function(parcel){if(parcel.id===parcelId){found=parcel;return true;}return false;});});return found;}
@@ -2293,7 +2510,7 @@ function ensurePlayerActionQueue(){if(!Array.isArray(state.playerActionQueue))st
 function queuedActionLabel(action,p){var labels={move:'Move',scout:'Scout',extort:'Extort',collect:'Collect',deliverCollection:'Deliver collection',enterSafehouseContext:'Enter Safehouse'};return(labels[action]||action)+' · '+((p&&p.label)||(p&&p.subtype)||'Building');}
 function playerActionQueueView(){var queue=ensurePlayerActionQueue();if(!queue.length)return'<div class="player-action-queue" aria-label="Queued actions"></div>';return'<div class="player-action-queue" aria-label="Queued actions"><small>Queued actions '+queue.length+'/5</small>'+queue.map(function(item,index){return'<button data-action="cancelQueuedAction" data-queue-id="'+esc(item.id)+'" title="Cancel '+esc(item.label)+'"><b>'+(index+1)+'</b><span>'+esc(item.label)+'</span><i aria-hidden="true">X</i></button>';}).join('')+'</div>';}
 function refreshPlayerActionQueueUI(){var old=document.querySelector('.player-action-queue'),wrap=document.createElement('div');wrap.innerHTML=playerActionQueueView();var fresh=wrap.firstElementChild;if(old)old.replaceWith(fresh);else{var panel=document.querySelector('.block-map-panel');if(panel)panel.appendChild(fresh);}}
-function queueBuildingCommand(action,p){var queue=ensurePlayerActionQueue();if(queue.length>=5){state.stopReason='The action queue is full (5/5).';refreshLiveTimeUI(true);return false;}queue.push({id:'queued-'+Date.now()+'-'+Math.floor(Math.random()*9999),action:action,parcel:p,districtId:state.selected,label:queuedActionLabel(action,p)});state.stopReason='Queued: '+queuedActionLabel(action,p)+'.';refreshPlayerActionQueueUI();refreshLiveTimeUI(true);if(!state.playerMovement&&!state.playerAction)startNextQueuedAction();return true;}
+function queueBuildingCommand(action,p){var queue=ensurePlayerActionQueue();if(queue.length>=5){state.stopReason='The action queue is full (5/5).';refreshLiveTimeUI(true);return false;}queue.push({id:'queued-'+Date.now()+'-'+Math.floor(Math.random()*9999),action:action,parcel:p,districtId:(p&&p.districtId)||state.selected,label:queuedActionLabel(action,p)});state.stopReason='Queued: '+queuedActionLabel(action,p)+'.';refreshPlayerActionQueueUI();refreshLiveTimeUI(true);if(!state.playerMovement&&!state.playerAction)startNextQueuedAction();return true;}
 function startNextQueuedAction(){var queue=ensurePlayerActionQueue();if(!queue.length)return false;var item=queue.shift();refreshPlayerActionQueueUI();executeBuildingCommand(item.action,item.parcel,{fromQueue:true,queueItem:item});return true;}
 function cancelQueuedAction(id){var queue=ensurePlayerActionQueue(),before=queue.length;state.playerActionQueue=queue.filter(function(item){return item.id!==id;});if(state.playerActionQueue.length!==before)state.stopReason='Queued action cancelled.';refreshPlayerActionQueueUI();refreshLiveTimeUI(true);}
 function startLocalAction(type,p,minutes,after,label){
@@ -2323,7 +2540,7 @@ function startPlayerMovementToParcel(p,after){
     else{state.stopReason='The player is already at '+(p.label||p.subtype||'that building')+'.';if(!startNextQueuedAction())pauseCommandTime(state.stopReason);}
     updateMountedDistrictTime();return;
   }
-  var targetDistrict=(after&&after.districtId)||state.selected,travelMinutes=walkingTravelMinutes(from,(state.playerLocation&&state.playerLocation.districtId)||targetDistrict,p,targetDistrict);
+  var targetDistrict=(after&&after.districtId)||p.districtId||state.selected,travelMinutes=walkingTravelMinutes(from,(state.playerLocation&&state.playerLocation.districtId)||targetDistrict,p,targetDistrict);
   state.playerMovement={fromParcelId:from,targetParcelId:p.id,districtId:targetDistrict,label:p.label||p.subtype||'Building',remainingMinutes:travelMinutes,durationMinutes:travelMinutes,after:after||null,startedAt:Date.now(),routeId:'route-'+Date.now()+'-'+Math.floor(Math.random()*9999)};
   state.stopReason='Travelling to '+(p.label||p.subtype||'building')+' at 1x speed.';
   updateMountedDistrictTime();
@@ -2518,7 +2735,7 @@ function refreshExtortionModal(){
 }
 function districtOverviewPanel(d,l){
   var stats=districtParcelStats(l),m=districtScaledMetrics(d,l);
-  var intro='<section class="building-info-empty"><small>District inspection</small><h3>'+esc(d.name)+'</h3><p>Select a building in the 3D view to inspect its structural footprint, capacity, ingress points, and current parcel values.</p>'+metricGrid([['Buildings / parcels',stats.total],['Top categories',stats.topCategories||'None'],['Top subtypes',stats.topSubtypes||'None'],['District area',fmtAreaMetric(m.scaledArea)]])+'</section>';
+  var intro='<section class="building-info-empty"><small>Island inspection</small><h3>'+esc(islandDisplayName(currentIslandId()))+'</h3><p>Select a building in the 3D view to inspect its structural footprint, capacity, ingress points, and current parcel values.</p>'+metricGrid([['Buildings / parcels',stats.total],['Top categories',stats.topCategories||'None'],['Top subtypes',stats.topSubtypes||'None'],['Local area',fmtAreaMetric(m.scaledArea)]])+'</section>';
   var buildingAverages=buildingSection('District buildings',[
     ['Average building area',fmtAreaMetric(m.buildingStats.avgM2)],
     ['Median building area',fmtAreaMetric(m.buildingStats.medianM2)],
@@ -2526,6 +2743,28 @@ function districtOverviewPanel(d,l){
     ['Median building volume',fmtMetric(m.buildingStats.medianM3,' m3')]
   ]);
   return intro+buildingAverages;
+}
+function countMapRows(map,limit){
+  var keys=Object.keys(map||{}).sort(function(a,b){return map[b]-map[a]||a.localeCompare(b);}).slice(0,limit||8);
+  return keys.length?keys.map(function(k){return[k,map[k]];}):[['None','0']];
+}
+function islandInspectionPanel(d,l){
+  var islandId=currentIslandId(),islandName=islandDisplayName(islandId),islandLayout=island3dLayoutForDistrict(d,l),metrics=islandRealisticLandMetrics(islandId);
+  var parcels=[];(islandLayout.blocks||[]).forEach(function(block){(block.parcels||[]).forEach(function(p){parcels.push(p);});});
+  var buildings=parcels.filter(function(p){return p.isBuildable!==false;});
+  var subtypes={},sizes={},categories={};
+  buildings.forEach(function(p){
+    var subtype=p.subtype||p.kind||'Mixed use',size=p.sizeClass||('Size '+(p.size||'?')),category=p.category||'Unclassified';
+    subtypes[subtype]=(subtypes[subtype]||0)+1;
+    sizes[size]=(sizes[size]||0)+1;
+    categories[category]=(categories[category]||0)+1;
+  });
+  var intro='<section class="building-info-empty island-inspection"><small>Island inspection</small><h3>'+esc(islandName)+'</h3><p>Select a building in the 3D island view to inspect its structure, ownership, scouting report, and valuation.</p>'+metricGrid([['Buildings',buildings.length],['Parcels',parcels.length],['Road segments',(islandLayout.roads||[]).length],['Island area',fmtAreaMetric(metrics.totalArea)]])+'</section>';
+  var categorySection=buildingSection('Building categories',countMapRows(categories,6));
+  var subtypeSection=buildingSection('Subtype counts',countMapRows(subtypes,8));
+  var sizeSection=buildingSection('Building sizes',countMapRows(sizes,6));
+  var future='<section class="building-info-section future-island-systems"><h4>Future island systems</h4><p class="muted">Room reserved for territory overlays, police beats, transit density, crew zones, and racket heat once those island-wide systems come online.</p></section>';
+  return intro+categorySection+subtypeSection+sizeSection+future;
 }
 function applyDatabaseBuildingIdentity(d,p){
   if(!d||!p||p.isPlayerSafehouse||p.isFamilyEstate||p.nameSource||!p.polygon||!p.polygon.length)return p;
@@ -2604,10 +2843,15 @@ function estateActivitiesPanel(p){
 function district3dPayload(d,l){
   ensurePlayerHousingAssignments();
   if(state.fogBuildingOpacity===undefined)state.fogBuildingOpacity=.24;
+  var islandId=currentIslandId();
+  var islandLayout=island3dLayoutForDistrict(d,l);
   var protectedPayload={};
   Object.keys(state.protectedBusinesses||{}).forEach(function(id){var r=state.protectedBusinesses[id];protectedPayload[id]=Object.assign({},r,{ready:!!(r&&r.weeklyDue&&isCollectionRushDay()&&r.lastCollectedDay!==(state.day||0))});});
   return{
     district:{id:d.id,name:d.name,wealth:d.wealth,police:d.police,corruption:d.corruption,fear:d.fear,order:d.order,control:d.control,rival:d.rival},
+    islandView:true,
+    islandId:islandId,
+    islandName:islandDisplayName(islandId),
     seed:(state.district3d&&state.district3d.seed)||0,
     timePeriod:state.time,
     timeMinuteOfDay:state.timeMinuteOfDay,
@@ -2626,12 +2870,12 @@ function district3dPayload(d,l){
     startingProtectionDistrictId:(state.familyEstate&&state.familyEstate.districtId)||'',
     fogBuildingOpacity:state.fogBuildingOpacity,
     debug:{boundary:true,parcelOutlines:true,roadClipPoints:false,selectedParcelId:true,cameraTarget:false,windows:false,exactExtrusion:true},
-    outerPolygon:l.outerPolygon,
-    contextDistricts:islandContextDistrictsForDistrict(d),
-    inheritedRoads:inheritedRoadsForDistrict(d),
-    bridgeLandings:bridgeLandingsForDistrict(d),
-    roads:l.roads,
-    blocks:(l.blocks||[]).map(function(b){return{id:b.id,label:b.label,polygon:b.polygon,pressure:b.pressure,parcels:(b.parcels||[]).map(function(p){return Object.assign({},p,{polygon:p.polygon});})};})
+    outerPolygon:islandLayout.outerPolygon,
+    contextDistricts:[],
+    inheritedRoads:[],
+    bridgeLandings:islandLayout.bridgeLandings,
+    roads:islandLayout.roads,
+    blocks:(islandLayout.blocks||[]).map(function(b){return{id:b.id,label:b.label,districtId:b.districtId,polygon:b.polygon,pressure:b.pressure,parcels:(b.parcels||[]).map(function(p){return Object.assign({},p,{polygon:p.polygon});})};})
   };
 }
 function setDistrictFogOpacity(value){
@@ -2644,7 +2888,7 @@ function setDistrictFogOpacity(value){
 function districtDossierHtml(d,l,sb,sp){
   if(state.safehouseFocus)return safehouseManagementPanel(sp||(findPlayerSafehouse()||{}).parcel);
   if(state.estateFocus)return estateActivitiesPanel(sp||(findFamilyEstate()||{}).parcel);
-  return sp?buildingInformationPanel(d,sp):districtOverviewPanel(d,l);
+  return sp?buildingInformationPanel(d,sp):islandInspectionPanel(d,l);
 }
 function renderSelectedBuildingDossier(parcel){
   var aside=document.querySelector('.district-dossier');
@@ -2780,7 +3024,7 @@ function mountDistrict3dIfNeeded(force){
     }
     return;
   }
-  var d=district(state.selected),l=layout(d),seed=(state.district3d&&state.district3d.seed)||0,key='3d-first-district-generator-v34-convex-districts-visual-exact-only-'+d.id+'-'+seed+'-'+(state.estateFocus?'estate':'district');
+  var d=district(state.selected),l=layout(d),key=district3dMountedKey();
   if(!force&&root.dataset.mountedKey===key)return;
   root.dataset.mountedKey=key;
   if(!root.dataset.selectionBridge){
@@ -2800,7 +3044,7 @@ function mountDistrict3dIfNeeded(force){
     });
   }
   window.DeskDon3D.mount(root,district3dPayload(d,l),function(target){
-    if(target&&target.districtId){focusDistrictInView(target.districtId,target.entering?target.name:'');return;}
+    if(target&&target.districtNavId)return;
     if(target)selectParcelById(target.id||target.parcelId||'selected-building',target);
   });
   if(state.district3d&&state.district3d.enteringName){
@@ -2816,20 +3060,19 @@ function districtView(embedded){
   var d=district(state.selected),l=layout(d);
   if(state.fogBuildingOpacity===undefined)state.fogBuildingOpacity=.24;
   var previousDistrict3d=state.district3d||{};
-  state.district3d={enabled:true,districtId:d.id,seed:previousDistrict3d.seed||0,enteringName:previousDistrict3d.enteringName||''};
+  state.selectedIsland=currentIslandId();
+  state.district3d={enabled:true,districtId:d.id,islandId:state.selectedIsland,seed:previousDistrict3d.seed||0,enteringName:previousDistrict3d.enteringName||''};
   var sb=l.blocks.find(function(b){return b.id===state.selectedBlock;})||l.blocks[0];
   var sp=sb?sb.parcels.find(function(p){return p.id===state.selectedParcel;}):null;
   if(state.selected3dParcel)sp=state.selected3dParcel;
-  var backButton=embedded?'<button class="inline" onclick="backFromDistrict(event)">Back to City Map</button>':'';
-  var estateButton='<button class="inline" data-action="jumpFamilyEstate">Locate Estate</button>';
-  var safehouseButton='<button class="inline" data-action="jumpPlayerSafehouse">Move to Safehouse</button>';
-  var fogSlider=state.safehouseFocus?'':'<label class="district-fog-control"><span>Fog buildings <b data-fog-opacity-label>'+Math.round(state.fogBuildingOpacity*100)+'%</b></span><input type="range" min="6" max="60" value="'+Math.round(state.fogBuildingOpacity*100)+'" data-action="fogOpacity"></label>';
   var entering=state.district3d.enteringName?'<div class="district-three-entering district-three-entering-reveal"><div class="district-three-entering-card"><small>Entering...</small><strong>'+esc(state.district3d.enteringName)+'</strong></div></div>':'';
   var visual=state.safehouseFocus?'<div id="safehouse-three-root" class="district-three-root safehouse-three-root"><div class="district-three-loading"><span></span></div></div>':'<div id="district-three-root" class="district-three-root"><div class="district-three-loading"><span></span></div>'+entering+'</div>'+playerActionQueueView();
-  var heading=state.safehouseFocus?'Starting Safehouse':d.name;
-  var subline=state.safehouseFocus?'Private interior / household management':'Size '+districtMapArea(d.id)+' - Wealth '+d.wealth+' - Police '+d.police+' - Corruption '+d.corruption+' - Fear '+d.fear+' - Public order '+d.order;
-  var headActions=state.safehouseFocus?'<button class="inline" data-action="exitSafehouse">Back to District</button>':fogSlider+safehouseButton+estateButton+backButton;
-  return '<section class="district-control '+(embedded?'embedded':'')+' three-mode '+(state.safehouseFocus?'safehouse-mode':'')+'"><div class="district-head"><div><small>'+(state.safehouseFocus?'Safehouse interior':embedded?'City map / district focus':'District control')+'</small><h2>'+esc(heading)+'</h2></div><p>'+subline+'</p><div class="district-head-actions">'+headActions+'</div></div><div class="district-layout"><div class="block-map-panel">'+visual+'</div><aside class="district-dossier">'+districtDossierHtml(d,l,sb,sp)+'</aside></div></section>';
+  var islandDistrictCount=islandDistricts(state.selectedIsland).length;
+  var islandAverages=islandDistricts(state.selectedIsland),avgWealth=islandAverages.length?Math.round(islandAverages.reduce(function(sum,item){return sum+(item.wealth||0);},0)/islandAverages.length):d.wealth,avgPolice=islandAverages.length?Math.round(islandAverages.reduce(function(sum,item){return sum+(item.police||0);},0)/islandAverages.length):d.police,avgCorruption=islandAverages.length?Math.round(islandAverages.reduce(function(sum,item){return sum+(item.corruption||0);},0)/islandAverages.length):d.corruption;
+  var heading=state.safehouseFocus?'Starting Safehouse':islandDisplayName(state.selectedIsland);
+  var subline=state.safehouseFocus?'Private interior / household management':'Whole island view / '+islandDistrictCount+' former districts flattened into one playable surface';
+  var head=state.safehouseFocus?'<div class="district-head"><div><small>Safehouse interior</small><h2>'+esc(heading)+'</h2></div><p>'+subline+'</p><div class="district-head-actions"><button class="inline" data-action="exitSafehouse">Back to District</button></div></div>':'';
+  return '<section class="district-control '+(embedded?'embedded':'')+' three-mode '+(state.safehouseFocus?'safehouse-mode':'')+'">'+head+'<div class="district-layout"><div class="block-map-panel">'+visual+'</div><aside class="district-dossier">'+districtDossierHtml(d,l,sb,sp)+'</aside></div></section>';
 }
 var creatorSkillNames=['Muscle','Shooting','Driving','Stealth','Street Smarts','Negotiation','Leadership','Finance','Connections','Intelligence'];
 function applyCreatorMods(target,mods){Object.keys(mods||{}).forEach(function(k){target[k]=(target[k]||0)+mods[k];});}
@@ -3328,12 +3571,127 @@ selectedMafiaPopover=function(){return'';};
 mafiaFamilyView=function(){var f=ensureFamilyPhase2();if(!f.mafiaFamily)f.mafiaFamily=generateMafiaFamily('mafia-init-'+Date.now(),f.bloodFamily);var org=ensureStructuredMafia(f.mafiaFamily,f.bloodFamily);ensureMafiaCulturalOpinions(org);var members=org.members,view=mafiaTreeState(),selected=state.selectedFamilyProfile&&state.selectedFamilyProfile!=='player',don=members.find(function(m){return normalizedMafiaRank(m.rank)==='Boss';}),under=members.find(function(m){return m.rank==='Underboss';}),cons=members.find(function(m){return m.rank==='Consigliere';}),capos=members.filter(function(m){return m.rank==='Capo'||m.rank==='Lieutenant';}).slice(0,3),made=members.filter(function(m){return ['Senior Soldier','Soldier','Junior Soldier'].indexOf(m.rank)>=0;}),assoc=members.filter(function(m){return ['Associate','Trusted Associate'].indexOf(m.rank)>=0;}),street=members.filter(function(m){return ['Prospect','Street Punk','Enforcer','Runner','Lookout'].indexOf(m.rank)>=0;}),external=members.filter(function(m){return mafiaRankMeta(m.rank).external;});while(capos.length<3&&made.length){capos.push(made.shift());}var pools=[made,assoc,street],crews=capos.map(function(c,i){var crew=[];pools.forEach(function(pool){crew=crew.concat(pool.splice(0,i===0?2:1));});return mafiaCrewColumn('Crew '+(i+1),c,crew);}).join('');var leftovers=made.concat(assoc,street);if(leftovers.length)crews+=mafiaCrewColumn('Unassigned Street Bench',null,leftovers.slice(0,6));var board='<div class="mafia-tree-world" style="width:1500px;min-height:920px;transform:translate('+view.panX+'px,'+view.panY+'px) scale('+view.zoom+')"><div class="mafia-tree-layers '+(selected?'has-selection':'')+'">'+(selected?'<div class="tree-focus-scrim mafia-scrim"></div>':'')+'<div class="mafia-layer supreme">'+(don?mafiaNodeCard(don,'supreme-card'):'<div class="vacant-role critical">No Don - succession crisis</div>')+'</div><div class="mafia-link gold"></div><div class="mafia-layer inner-circle">'+(under?mafiaNodeCard(under):'<div class="vacant-role">Vacant Underboss</div>')+(cons?mafiaNodeCard(cons):'<div class="vacant-role">Vacant Consigliere</div>')+'</div><div class="mafia-link silver"></div><div class="mafia-crews">'+crews+'</div>'+(external.length?'<div class="mafia-link dotted"></div><section class="external-assets"><small>External Assets</small><div>'+external.slice(0,8).map(function(m){return mafiaNodeCard(m);}).join('')+'</div></section>':'')+'</div></div>';return '<div class="family-phase-layout mafia mafia-structured"><section class="mafia-tree mafia-tree-board">'+mafiaFamilyIdentity(org)+'<div class="family-tree-viewport mafia-tree-viewport" onwheel="wheelMafiaTree(event)" onpointerdown="beginMafiaTreeDrag(event)" onpointermove="dragMafiaTree(event)" onpointerup="endMafiaTreeDrag(event)" onpointercancel="endMafiaTreeDrag(event)" onpointerleave="endMafiaTreeDrag(event)"><div class="tree-cue cue-top">Mouse wheel to zoom</div><div class="tree-cue cue-bottom">Hold and drag to pan</div>'+board+'</div></section>'+recentFamilyEventsPanel()+'</div>';};
 var familyViewOpinionBase=familyView;
 familyView=function(){ensureSocialState();recalcVisibleOpinions();return familyViewOpinionBase();};
-function content(){if(state.tab==='Dashboard')return dashboard();if(state.tab==='Providence')return providenceDebugView();if(state.tab==='Family')return familyView();if(state.tab==='Creator')return characterCreatorView();if(state.tab==='City')return cityMap()+(state.mapMode==='district'?'':'<div class="districts">'+state.districts.map(function(d){var island=mapDistricts[d.id]?mapDistricts[d.id].island:'City';return'<button data-action="selectDistrict" data-id="'+d.id+'"><h3>'+esc(d.name)+'</h3><span>'+esc(island)+' - Wealth '+d.wealth+' - Police '+d.police+'</span><span>Fear '+d.fear+' - Control '+d.control+' - Rival '+d.rival+'</span></button>';}).join('')+'</div>');if(state.tab==='District')return districtView(false);if(state.tab==='Calendar')return panel('Calendar','<div class="calendar">'+Array.from({length:21},function(_,i){var events=state.tasks.filter(function(t){return t.endDay===state.day+i&&t.status==='active';}).map(function(t){return t.title;}).join(', ')||'No scheduled stops';return'<div><b>Day '+(state.day+i)+'</b><span>'+esc(events)+'</span></div>';}).join('')+'</div>');if(state.tab==='Inbox')return panel('Inbox',state.messages.map(function(m,i){return'<button class="message '+(m.read?'read':m.importance)+'" data-action="readMessage" data-index="'+i+'"><b>'+esc(m.title)+'</b><span>Day '+m.day+' - '+esc(m.time)+' - '+esc(m.type)+'</span><p>'+esc(m.body)+'</p></button>';}).join(''));if(state.tab==='Crew')return panel('Crew',rows(state.crew));if(state.tab==='Tasks')return panel('Tasks',rows(state.tasks.map(function(t){return[t.title,t.status+' - '+t.progress+'/'+t.required+' - '+district(t.districtId).name+' - due Day '+t.endDay,t.result||'A report will arrive when the work is done.'];})));if(state.tab==='Opportunities')return panel('Known Opportunities',list(state.opportunities.map(function(o){return o.title+' - '+o.type+' - '+district(o.districtId).name+' - '+o.value+' - '+o.risk;}),'Scout districts and investigate fronts to reveal opportunities.'));if(state.tab==='Fronts')return panel('Fronts','<button class="primary inline" data-action="addTask" data-title="Launder Money">Launder $1,000 Through Front</button><br><br>'+rows(state.fronts));if(state.tab==='Rackets')return panel('Rackets',list(state.rackets.map(function(r){return r[0]+' - '+r[1]+' - '+r[2];}),'No active rackets yet.'));if(state.tab==='Rivals')return panel('Rivals',rows(state.rivals));return'';}
+function content(){if(state.tab==='Dashboard')return dashboard();if(state.tab==='Providence')return providenceDebugView();if(state.tab==='Family')return familyView();if(state.tab==='Creator')return characterCreatorView();if(state.tab==='City')return cityMap()+(state.mapMode==='district'?'':islandCardsView());if(state.tab==='District')return districtView(false);if(state.tab==='Calendar')return panel('Calendar','<div class="calendar">'+Array.from({length:21},function(_,i){var events=state.tasks.filter(function(t){return t.endDay===state.day+i&&t.status==='active';}).map(function(t){return t.title;}).join(', ')||'No scheduled stops';return'<div><b>Day '+(state.day+i)+'</b><span>'+esc(events)+'</span></div>';}).join('')+'</div>');if(state.tab==='Inbox')return panel('Inbox',state.messages.map(function(m,i){return'<button class="message '+(m.read?'read':m.importance)+'" data-action="readMessage" data-index="'+i+'"><b>'+esc(m.title)+'</b><span>Day '+m.day+' - '+esc(m.time)+' - '+esc(m.type)+'</span><p>'+esc(m.body)+'</p></button>';}).join(''));if(state.tab==='Crew')return panel('Crew',rows(state.crew));if(state.tab==='Tasks')return panel('Tasks',rows(state.tasks.map(function(t){return[t.title,t.status+' - '+t.progress+'/'+t.required+' - '+district(t.districtId).name+' - due Day '+t.endDay,t.result||'A report will arrive when the work is done.'];})));if(state.tab==='Opportunities')return panel('Known Opportunities',list(state.opportunities.map(function(o){return o.title+' - '+o.type+' - '+district(o.districtId).name+' - '+o.value+' - '+o.risk;}),'Scout districts and investigate fronts to reveal opportunities.'));if(state.tab==='Fronts')return panel('Fronts','<button class="primary inline" data-action="addTask" data-title="Launder Money">Launder $1,000 Through Front</button><br><br>'+rows(state.fronts));if(state.tab==='Rackets')return panel('Rackets',list(state.rackets.map(function(r){return r[0]+' - '+r[1]+' - '+r[2];}),'No active rackets yet.'));if(state.tab==='Rivals')return panel('Rivals',rows(state.rivals));return'';}
 function sideStatusView(){ensureOrganizationFinance();var p=playerProgressState(),pct=clamp((Number(p.exp)||0)/Math.max(1,Number(p.expToNext)||100)*100,0,100),env=dailyEnvelopeProgress();return '<div class="side-status"><div class="cash-pair"><span><small>Clean</small><b>$'+money(state.clean||0)+'</b></span><span><small>Dirty</small><b>$'+money(state.dirty||0)+'</b></span></div><div class="rank-strip"><small>Collection envelopes</small><b>'+esc(env.collected)+' / '+esc(env.possible)+'</b><span>Held: '+esc((state.collectionEnvelopes||[]).length)+'</span></div><div class="rank-strip"><small>Mafia coffers</small><b>$'+money((state.organizationFinance&&state.organizationFinance.coffers)||0)+'</b><span>Organization ledger</span></div><div class="rank-strip"><small>Rank</small><b>'+esc(p.rank)+'</b><span>Next: '+esc(p.nextRank)+'</span></div><div class="rank-strip"><small>Level '+esc(p.level)+'</small><b>'+esc(p.exp)+' / '+esc(p.expToNext)+' XP</b><i style="--xp:'+pct.toFixed(0)+'%"></i></div></div>';}
 function render(){ensureTimeState();ensureNarratorState();ensureEventFrameworkState();if(state.tab==='Family'&&typeof ensureFamilyPhase2==='function')ensureFamilyPhase2();var modal=eventModalView()+extortionModalView(),timeDrawer=timeDrawerView(),nav=tabs.map(function(t){return'<button class="'+(state.tab===t?'active':'')+'" data-action="tab" data-tab="'+t+'">'+t+'</button>';}).join(''),creator=state.tab==='Creator',top='<header class="top"><div><small>'+esc(gameDate())+'</small><h1>Day '+state.day+' - '+esc(state.time)+'</h1></div><div class="top-actions">'+(creator?'<button data-action="tab" data-tab="Dashboard">Dashboard</button><button data-action="tab" data-tab="City">City</button><button data-action="tab" data-tab="Family">Family</button>':'')+'<button class="primary move-time-button" data-action="moveTime">'+(state.timeMoving?'Moving time...':'Move time')+'</button><button data-action="pause">Pause</button><button data-action="save">Save</button><button data-action="load">Load</button><button data-action="new">New</button><button data-action="randomCity">Generate City</button></div></header>';document.getElementById('app').innerHTML=creator?'<div class="creator-shell">'+timeDrawer+'<main class="main creator-main-shell">'+top+(state.stopReason?'<div class="stop"><strong>Simulation stopped:</strong> '+esc(state.stopReason)+'</div>':'')+content()+'</main></div>'+modal:'<div class="shell">'+timeDrawer+'<aside class="side"><div class="brand"><strong>Desk Don</strong><span>'+esc(state.family)+'</span></div>'+sideStatusView()+nav+'</aside><main class="main">'+top+(state.stopReason?'<div class="stop"><strong>Simulation stopped:</strong> '+esc(state.stopReason)+'</div>':'')+content()+'</main></div>'+modal;}
 var renderDistrict3dBase=render;
 render=function(){
   renderDistrict3dBase();
+  if(state.district3d&&state.district3d.enabled)setTimeout(function(){mountDistrict3dIfNeeded(false);},0);
+};
+function messageCenterView(){
+  var messages=state.messages||[];
+  var body=messages.length?messages.map(function(m,i){
+    return'<button class="message '+(m.read?'read':esc(m.importance||'normal'))+'" data-action="readMessage" data-index="'+i+'"><b>'+esc(m.title||'Untitled message')+'</b><span>'+esc((m.day!==undefined?('Day '+m.day):gameDate())+' - '+(m.time||state.time)+' - '+(m.type||'Message'))+'</span><p>'+esc(m.body||'No body text.')+'</p></button>';
+  }).join(''):'<p class="muted">No messages yet.</p>';
+  return '<section class="messages-board">'+panel('Messages',body)+'</section>';
+}
+function mapTabView(){return '<section class="map-fullscreen-view map-2d">'+cityMap(true)+'</section>';}
+function cityViewTab(){
+  if(state.mapMode!=='district'){
+    state.mapMode='district';
+    state.selectedIsland=currentIslandId();
+    state.district3d={enabled:true,districtId:state.selected,islandId:state.selectedIsland,seed:(state.district3d&&state.district3d.seed)||0,enteringName:''};
+  }
+  return '<section class="map-fullscreen-view map-3d">'+districtView(true)+'</section>';
+}
+content=function(){
+  state.tab=normalizeTab(state.tab);
+  if(state.tab==='Dashboard')return mapTabView();
+  if(state.tab==='City')return cityViewTab();
+  if(state.tab==='Inbox')return messageCenterView();
+  if(state.tab==='Family')return familyView();
+  if(state.tab==='Creator')return characterCreatorView();
+  if(state.tab==='Providence')return providenceDebugView();
+  return mapTabView();
+};
+sideStatusView=function(){
+  ensureOrganizationFinance();
+  var p=playerProgressState(),env=dailyEnvelopeProgress(),held=(state.collectionEnvelopes||[]).length,rank=String(p.rank||'Associate'),showCoffers=['Don','Boss','Underboss','Consigliere'].indexOf(rank)>=0;
+  var envelopes=(held||env.possible)?'<div class="rank-strip transient"><small>Collection envelopes</small><b>'+esc(env.collected)+' / '+esc(env.possible)+'</b><span>Held: '+esc(held)+'</span></div>':'';
+  var coffers=showCoffers?'<div class="rank-strip privileged"><small>Mafia coffers</small><b>$'+money((state.organizationFinance&&state.organizationFinance.coffers)||0)+'</b></div>':'';
+  return '<div class="side-status compact"><div class="cash-pair compact"><span><small>Clean</small><b>$'+money(state.clean||0)+'</b></span><span><small>Dirty</small><b>$'+money(state.dirty||0)+'</b></span></div>'+envelopes+coffers+'<div class="rank-strip player-rank"><small>Rank</small><b>'+esc(rank)+'</b></div></div>';
+};
+function sideNavView(){
+  var current=normalizeTab(state.tab),lastGroup='';
+  return '<nav class="side-nav">'+tabs.map(function(tab,i){
+    var sep=i&&tab.group!==lastGroup?'<div class="side-separator"></div>':'';
+    lastGroup=tab.group;
+    return sep+'<button class="'+(current===tab.id?'active':'')+'" data-action="tab" data-tab="'+esc(tab.id)+'"><span class="nav-icon" aria-hidden="true">'+(tab.icon||esc(tab.short))+'</span><span class="nav-label">'+esc(tab.label)+'</span></button>';
+  }).join('')+'</nav>';
+}
+function playerSidebarHeader(){
+  var c=state.creatorCharacter||{},f=state.familyState&&state.familyState.don||{},p=playerProgressState();
+  var name=c.fullName||f.name||'Unknown Operator',age=c.age||f.age||'?',rank=(p&&p.rank)||c.rank||f.title||'Street Punk';
+  return '<div class="player-sidebar-card no-avatar"><div><strong>'+esc(name)+'</strong><small>Age '+esc(age)+'</small><em>'+esc(rank)+'</em></div></div>';
+}
+function topBarView(){
+  var title=state.tab==='Dashboard'?'Map':state.tab==='City'?'City View':state.tab==='Inbox'?'Messages':state.tab==='Creator'?'Character Creator':state.tab;
+  return '<header class="top app-top"><div><small>'+esc(gameDate())+'</small><h1>'+esc(title)+' · Day '+state.day+' · '+esc(state.time)+'</h1></div><div class="top-actions"><button class="primary move-time-button" data-action="moveTime">'+(state.timeMoving?'Moving time...':'Move time')+'</button><button data-action="pause">Pause</button><button data-action="save">Save</button><button data-action="load">Load</button><button data-action="new">New</button><button data-action="randomCity">Generate City</button></div></header>';
+}
+var district3dRootCache={};
+function district3dMountedKey(){
+  var seed=(state.district3d&&state.district3d.seed)||0;
+  return '3d-island-flattened-v01-'+safeCacheId(state.mapName||mapCityName)+'-'+currentIslandId()+'-'+seed+'-'+(state.estateFocus?'estate':'island');
+}
+function district3dCacheHolder(){
+  var holder=document.getElementById('district-three-cache-holder');
+  if(!holder){
+    holder=document.createElement('div');
+    holder.id='district-three-cache-holder';
+    holder.style.cssText='position:absolute;width:0;height:0;overflow:hidden;left:-99999px;top:-99999px;pointer-events:none;';
+    document.body.appendChild(holder);
+  }
+  return holder;
+}
+function safeCacheId(key){return String(key||'district').replace(/[^a-z0-9_-]+/gi,'-');}
+function clearDistrict3dRootCache(){
+  var active=document.getElementById('district-three-root');
+  if(active&&window.DeskDon3D&&window.DeskDon3D.cleanup)window.DeskDon3D.cleanup(active);
+  Object.keys(district3dRootCache||{}).forEach(function(key){
+    var root=district3dRootCache[key];
+    if(root&&window.DeskDon3D&&window.DeskDon3D.cleanup)window.DeskDon3D.cleanup(root);
+    if(root&&root.parentNode)root.parentNode.removeChild(root);
+  });
+  district3dRootCache={};
+}
+function parkDistrict3dRootForRender(){
+  var root=document.getElementById('district-three-root');
+  if(!root||root.dataset.deskdonCached==='1'||!root.dataset.mountedKey)return;
+  var key=root.dataset.mountedKey;
+  district3dRootCache[key]=root;
+  root.dataset.originalId='district-three-root';
+  root.dataset.deskdonCached='1';
+  root.id='district-three-root-cached-'+safeCacheId(key);
+  root.style.display='none';
+  if(window.DeskDon3D&&window.DeskDon3D.setSuspended)window.DeskDon3D.setSuspended(root,true);
+  district3dCacheHolder().appendChild(root);
+}
+function restoreCachedDistrict3dRoot(){
+  if(!(state.tab==='City'&&state.mapMode==='district')||state.safehouseFocus)return false;
+  var placeholder=document.getElementById('district-three-root'),key=district3dMountedKey(),cached=district3dRootCache[key];
+  if(!placeholder||!cached)return false;
+  cached.id='district-three-root';
+  cached.dataset.deskdonCached='0';
+  cached.style.display='';
+  placeholder.replaceWith(cached);
+  if(window.DeskDon3D&&window.DeskDon3D.setSuspended)window.DeskDon3D.setSuspended(cached,false);
+  updateMountedDistrictTime();
+  return true;
+}
+function renderModernShell(){
+  ensureTimeState();ensureNarratorState();ensureEventFrameworkState();
+  state.tab=normalizeTab(state.tab);
+  if(state.tab==='Family'&&typeof ensureFamilyPhase2==='function')ensureFamilyPhase2();
+  parkDistrict3dRootForRender();
+  var modal=eventModalView()+extortionModalView(),timeDrawer=timeDrawerView(),collapsed=state.sidebarCollapsed!==false,mainMap=(state.tab==='Dashboard'||state.tab==='City');
+  var side='<aside class="side app-side"><button class="sidebar-toggle" data-action="toggleSidebar" title="'+(collapsed?'Expand sidebar':'Collapse sidebar')+'">'+(collapsed?'&rsaquo;':'&lsaquo;')+'</button>'+playerSidebarHeader()+sideStatusView()+sideNavView()+'<div class="side-bottom-actions"><button data-action="jumpPlayerSafehouse"><span class="nav-icon" aria-hidden="true">&#8962;</span><span>Move to Safehouse</span></button></div></aside>';
+  var stop=(!mainMap&&state.stopReason)?'<div class="stop"><strong>Simulation:</strong> '+esc(state.stopReason)+'</div>':'';
+  document.getElementById('app').innerHTML='<div class="shell app-shell '+(collapsed?'sidebar-collapsed':'sidebar-expanded')+' '+(mainMap?'map-shell':'')+'">'+timeDrawer+side+'<main class="main '+(mainMap?'map-main':'')+'">'+stop+content()+'</main></div>'+modal;
+  restoreCachedDistrict3dRoot();
+}
+render=function(){
+  renderModernShell();
   if(state.district3d&&state.district3d.enabled)setTimeout(function(){mountDistrict3dIfNeeded(false);},0);
 };
 var dragState={moved:false};
@@ -3405,11 +3763,23 @@ function backFromDistrict(e){
     setTimeout(finishCityReturn,MAP_TRANSITION_MS);
   }
 }
-function addTask(title){state.tasks.unshift({title:title,status:'active',progress:0,required:3,districtId:state.selected,endDay:state.day+2,result:''});state.tab='Tasks';render();}function selectBlock(blockId){state.selectedBlock=blockId;state.selectedParcel='';render();}function selectParcel(blockId,parcelId){state.selectedBlock=blockId;state.selectedParcel=parcelId;render();}
+function addTask(title){state.tasks.unshift({title:title,status:'active',progress:0,required:3,districtId:state.selected,endDay:state.day+2,result:''});state.tab='Dashboard';render();}function selectBlock(blockId){state.selectedBlock=blockId;state.selectedParcel='';render();}function selectParcel(blockId,parcelId){state.selectedBlock=blockId;state.selectedParcel=parcelId;render();}
 document.addEventListener('click',function(e){var el=e.target.closest('[data-action="cancelQueuedAction"]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();cancelQueuedAction(el.getAttribute('data-queue-id'));},true);
 function saveGame(){window.DeskDonGameState.normalize(state);localStorage.setItem('desk-don-demo',JSON.stringify(state));}
-function loadGame(){var saved=localStorage.getItem('desk-don-demo');if(!saved)return;try{var parsed=JSON.parse(saved);if(!parsed||!Array.isArray(parsed.districts))throw new Error('Invalid save data');state=Object.assign(state,parsed);window.DeskDonGameState.attach(state);ensureFamilyState();ensureNarratorState();state.mapTransition=null;layouts={};state.playerMovement=null;state.playerAction=null;state.playerLocation=null;state.playerSpawnInitialized=false;ensurePlayerHousingAssignments();render();}catch(err){state.stopReason='Saved game could not be loaded';render();}}
-document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='moveTime'){e.preventDefault();e.stopImmediatePropagation();startMovingTime();}else if(action==='stopTime'){e.preventDefault();e.stopImmediatePropagation();closeTimeDrawer();}else if(action==='stepTime'){e.preventDefault();e.stopImmediatePropagation();stopMovingTime('Time stepped one minute.');state.timeDrawerOpen=true;advanceClockMinute({render:true,minutes:TIME_STEP_MINUTES});}else if(action==='timeSpeed'){e.preventDefault();e.stopImmediatePropagation();setTimeSpeed(el.getAttribute('data-speed'));}},true);
+function loadGame(){var saved=localStorage.getItem('desk-don-demo');if(!saved)return;try{if(typeof clearDistrict3dRootCache==='function')clearDistrict3dRootCache();var parsed=JSON.parse(saved);if(!parsed||!Array.isArray(parsed.districts))throw new Error('Invalid save data');state=Object.assign(state,parsed);window.DeskDonGameState.attach(state);ensureFamilyState();ensureNarratorState();state.selectedIsland=currentIslandId();state.mapTransition=null;layouts={};state.playerMovement=null;state.playerAction=null;state.playerLocation=null;state.playerSpawnInitialized=false;ensurePlayerHousingAssignments();render();}catch(err){state.stopReason='Saved game could not be loaded';render();}}
+function toggleSidebarCollapsed(){
+  state.sidebarCollapsed=state.sidebarCollapsed===false;
+  var shell=document.querySelector('.app-shell'),el=document.querySelector('[data-action="toggleSidebar"]');
+  if(!shell){render();return;}
+  shell.classList.toggle('sidebar-collapsed',!!state.sidebarCollapsed);
+  shell.classList.toggle('sidebar-expanded',!state.sidebarCollapsed);
+  if(el){
+    el.innerHTML=state.sidebarCollapsed?'&rsaquo;':'&lsaquo;';
+    el.title=state.sidebarCollapsed?'Expand sidebar':'Collapse sidebar';
+  }
+  setTimeout(function(){window.dispatchEvent(new Event('resize'));},80);
+}
+document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='moveTime'){e.preventDefault();e.stopImmediatePropagation();startMovingTime();}else if(action==='pauseTime'){e.preventDefault();e.stopImmediatePropagation();collapseTimeDrawerAnimated('Time paused.');}else if(action==='stopTime'){e.preventDefault();e.stopImmediatePropagation();closeTimeDrawer();}else if(action==='stepTime'){e.preventDefault();e.stopImmediatePropagation();stopMovingTime('Time stepped one minute.');state.timeDrawerOpen=true;advanceClockMinute({render:true,minutes:TIME_STEP_MINUTES});}else if(action==='timeSpeed'){e.preventDefault();e.stopImmediatePropagation();setTimeSpeed(el.getAttribute('data-speed'));if(!state.timeMoving)startMovingTime();}},true);
 document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='buildingInfoTab'){e.preventDefault();e.stopImmediatePropagation();state.buildingInfoTab=el.getAttribute('data-tab')||'structural';var selected=state.selected3dParcel||state.contextParcel;if(!selected){var selectedLayout=layout(district(state.selected));(selectedLayout.blocks||[]).some(function(block){return(block.parcels||[]).some(function(parcel){if(parcel.id===state.selectedParcel){selected=parcel;return true;}return false;});});}if(selected)renderSelectedBuildingDossier(selected);else refreshDistrictDossier();}else if(action==='hireAppraiser'){e.preventDefault();e.stopImmediatePropagation();startBuildingAppraisal(state.selected3dParcel||state.contextParcel);}else if(action==='extortionStop'){e.preventDefault();e.stopImmediatePropagation();resolveExtortionQte();}else if(action==='cancelExtortion'){e.preventDefault();e.stopImmediatePropagation();state.extortionEncounter=null;state.stopReason='Extortion attempt cancelled.';refreshExtortionModal();if(state.pendingDistrictRefresh){state.pendingDistrictRefresh=false;updateMountedRacketVisuals();}refreshLiveTimeUI(true);}},true);
 document.addEventListener('input',function(e){var el=e.target.closest('[data-action="fogOpacity"]');if(!el)return;setDistrictFogOpacity(el.value);},true);
 document.addEventListener('input',function(e){var el=e.target.closest('[data-action="safehouseRadioVolume"]');if(!el)return;var value=clamp(parseInt(el.value||'0',10),0,100);if(window.DeskDonSafehouse3D&&window.DeskDonSafehouse3D.setRadioVolume)window.DeskDonSafehouse3D.setRadioVolume(value/100);var label=el.parentElement&&el.parentElement.querySelector('b');if(label)label.textContent=value+'%';},true);
@@ -3420,14 +3790,53 @@ document.addEventListener('click',function(e){
 },true);
 document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='enterEstate'){e.preventDefault();e.stopImmediatePropagation();enterEstateView();}else if(action==='exitEstate'){e.preventDefault();e.stopImmediatePropagation();exitEstateView();}else if(action==='enterSafehouse'){e.preventDefault();e.stopImmediatePropagation();enterSafehouseView();}else if(action==='returnSafehouse'){e.preventDefault();e.stopImmediatePropagation();returnPlayerToSafehouse();}else if(action==='exitSafehouse'){e.preventDefault();e.stopImmediatePropagation();exitSafehouseView();}else if(action==='toggleSafehouseAutonomy'){e.preventDefault();e.stopImmediatePropagation();var needs=ensureSafehouseState();needs.autonomy=!needs.autonomy;if(!needs.autonomy){state.safehouseAutonomyActive=false;state.safehouseAutonomyRequested=false;state.safehouseAutonomyQueue=[];}state.stopReason='Safehouse autonomy '+(needs.autonomy?'enabled.':'disabled.');refreshSafehouseManagement();if(needs.autonomy&&needs.mood<45)setTimeout(function(){advanceSafehouseNeeds(0);},80);}else if(action==='paySafehouseRent'){e.preventDefault();e.stopImmediatePropagation();paySafehouseRent();}},true);
 document.addEventListener('click',function(e){var el=e.target.closest('[data-safehouse-action]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();performSafehouseAction(el.getAttribute('data-safehouse-action'));closeBuildingContextMenu();},true);
-document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='tab')setTab(el.getAttribute('data-tab'));else if(action==='familySubtab')setFamilySubtab(el.getAttribute('data-tab'));else if(action==='selectFamilyProfile')selectFamilyProfile(el.getAttribute('data-id'));else if(action==='randomizeBloodFamily')randomizeBloodFamily();else if(action==='randomizeMafiaFamily')randomizeMafiaFamily();else if(action==='randomizeRelationships'){randomizeRelationships();render();}else if(action==='simulateSocial')simulateSocialPeriod(parseInt(el.getAttribute('data-weeks')||'1',10));else if(action==='triggerSocial')triggerSocial(el.getAttribute('data-event'));else if(action==='bloodTreeZoom')bloodTreeZoom(parseFloat(el.getAttribute('data-step')||'0'));else if(action==='bloodTreePan')bloodTreePan(parseFloat(el.getAttribute('data-x')||'0'),parseFloat(el.getAttribute('data-y')||'0'));else if(action==='bloodTreeReset')bloodTreeReset();else if(action==='selectDistrict')selectDistrict(el.getAttribute('data-id'));else if(action==='jumpFamilyEstate')jumpToFamilyEstate();else if(action==='jumpPlayerSafehouse')jumpToPlayerSafehouse();else if(action==='selectFamilyPerson')selectFamilyPerson(el.getAttribute('data-id'));else if(action==='familyDecision')familyDecision(el.getAttribute('data-id'));else if(action==='randomizeCharacter')randomizeCharacter();else if(action==='toggleCreatorSecrets')toggleCreatorSecrets();else if(action==='acceptCharacter')acceptCharacter();else if(action==='selectCreatorRoll')selectCreatorRoll(el.getAttribute('data-index'));else if(action==='toggleCreatorRollLock')toggleCreatorRollLock(el.getAttribute('data-index'));else if(action==='selectBlock'){if(!dragState.moved)selectBlock(el.getAttribute('data-block'));}else if(action==='selectParcel'){if(!dragState.moved)selectParcel(el.getAttribute('data-block'),el.getAttribute('data-parcel'));}else if(action==='addTask')addTask(el.getAttribute('data-title'));else if(action==='providenceRecalc'){updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceRoll'){advanceProvidenceTick(true);autoResolveIfNeeded();render();}else if(action==='toggleAutoResolve'){var ar=ensureNarratorState();ar.autoResolveEvents=!ar.autoResolveEvents;autoResolveIfNeeded();render();}else if(action==='toggleAutoContinue'){var ac=ensureNarratorState();setAutoContinue(!ac.autoContinue);render();}else if(action==='providenceForceGood')forceProvidenceEvent('Good');else if(action==='providenceForceBad')forceProvidenceEvent('Bad');else if(action==='providenceForceCritical')forceProvidenceEvent('Critical');else if(action==='providenceFortune'){var n=ensureNarratorState();n.fortune=clamp(n.fortune+parseInt(el.getAttribute('data-delta')||'0',10),-100,100);updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceTest')setProvidenceTestState(el.getAttribute('data-kind'));else if(action==='providenceClearCooldowns')clearProvidenceCooldowns();else if(action==='resolveEventChoice')resolveActiveEvent(el.getAttribute('data-choice'));else if(action==='selectEventDef'){var ns=ensureEventFrameworkState();ns.selectedEventId=el.getAttribute('data-id');render();}else if(action==='createEventDef')createEventDefinition();else if(action==='duplicateEventDef')duplicateEventDefinition();else if(action==='deleteEventDef')deleteEventDefinition();else if(action==='toggleEventDef')toggleEventDefinition();else if(action==='saveEventDef')saveSelectedEventFromEditor();else if(action==='validateEventDef'){var nv=ensureEventFrameworkState();nv.eventValidation=validateEventDefinition(selectedEventDefinition());render();}else if(action==='previewEventDef'){var pd=selectedEventDefinition();if(pd)queueEvent(pd,'Editor preview',true);render();}else if(action==='testEventDef'){var td=selectedEventDefinition();if(td)queueEvent(td,'Editor test trigger',false);render();}else if(action==='exportEventDefs')exportEventDefinitions();else if(action==='importEventDefs')importEventDefinitions();else if(action==='addBuilderRow')addBuilderRow(el.getAttribute('data-kind'));else if(action==='filterEventDefs'){var nf=ensureEventFrameworkState();nf.eventFilters.search=editorFieldValue('event-search');render();}else if(action==='pause'){setAutoContinue(false);state.stopReason='Paused manually';render();}else if(action==='continue')next();else if(action==='save')saveGame();else if(action==='load')loadGame();else if(action==='new')location.reload();else if(action==='randomCity')generateProceduralCity('city-'+Date.now());else if(action==='readMessage'){state.messages[parseInt(el.getAttribute('data-index'),10)].read=true;render();}});
+document.addEventListener('click',function(e){
+  var el=e.target.closest('[data-action="toggleSidebar"]');
+  if(!el)return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  toggleSidebarCollapsed();
+},true);
+document.addEventListener('click',function(e){
+  var el=e.target.closest('[data-action]');
+  if(!el)return;
+  var action=el.getAttribute('data-action');
+  if(action==='selectDistrict'){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+  if(action==='toggleAutoContinue'){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    var ac=ensureNarratorState();
+    setAutoContinue(!ac.autoContinue);
+    render();
+  }
+},true);
+document.addEventListener('click',function(e){var el=e.target.closest('[data-action]');if(!el)return;var action=el.getAttribute('data-action');if(action==='tab')setTab(el.getAttribute('data-tab'));else if(action==='familySubtab')setFamilySubtab(el.getAttribute('data-tab'));else if(action==='selectFamilyProfile')selectFamilyProfile(el.getAttribute('data-id'));else if(action==='randomizeBloodFamily')randomizeBloodFamily();else if(action==='randomizeMafiaFamily')randomizeMafiaFamily();else if(action==='randomizeRelationships'){randomizeRelationships();render();}else if(action==='simulateSocial')simulateSocialPeriod(parseInt(el.getAttribute('data-weeks')||'1',10));else if(action==='triggerSocial')triggerSocial(el.getAttribute('data-event'));else if(action==='bloodTreeZoom')bloodTreeZoom(parseFloat(el.getAttribute('data-step')||'0'));else if(action==='bloodTreePan')bloodTreePan(parseFloat(el.getAttribute('data-x')||'0'),parseFloat(el.getAttribute('data-y')||'0'));else if(action==='bloodTreeReset')bloodTreeReset();else if(action==='selectDistrict')return;else if(action==='jumpFamilyEstate')jumpToFamilyEstate();else if(action==='jumpPlayerSafehouse')jumpToPlayerSafehouse();else if(action==='selectFamilyPerson')selectFamilyPerson(el.getAttribute('data-id'));else if(action==='familyDecision')familyDecision(el.getAttribute('data-id'));else if(action==='randomizeCharacter')randomizeCharacter();else if(action==='toggleCreatorSecrets')toggleCreatorSecrets();else if(action==='acceptCharacter')acceptCharacter();else if(action==='selectCreatorRoll')selectCreatorRoll(el.getAttribute('data-index'));else if(action==='toggleCreatorRollLock')toggleCreatorRollLock(el.getAttribute('data-index'));else if(action==='selectBlock'){if(!dragState.moved)selectBlock(el.getAttribute('data-block'));}else if(action==='selectParcel'){if(!dragState.moved)selectParcel(el.getAttribute('data-block'),el.getAttribute('data-parcel'));}else if(action==='addTask')addTask(el.getAttribute('data-title'));else if(action==='providenceRecalc'){updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceRoll'){advanceProvidenceTick(true);autoResolveIfNeeded();render();}else if(action==='toggleAutoResolve'){var ar=ensureNarratorState();ar.autoResolveEvents=!ar.autoResolveEvents;autoResolveIfNeeded();render();}else if(action==='toggleAutoContinue'){var ac=ensureEventFrameworkState();setAutoContinue(!ac.autoContinue);render();}else if(action==='providenceForceGood')forceProvidenceEvent('Good');else if(action==='providenceForceBad')forceProvidenceEvent('Bad');else if(action==='providenceForceCritical')forceProvidenceEvent('Critical');else if(action==='providenceFortune'){var n=ensureNarratorState();n.fortune=clamp(n.fortune+parseInt(el.getAttribute('data-delta')||'0',10),-100,100);updateNarratorMetrics();pushMetricSnapshot(true);render();}else if(action==='providenceTest')setProvidenceTestState(el.getAttribute('data-kind'));else if(action==='providenceClearCooldowns')clearProvidenceCooldowns();else if(action==='resolveEventChoice')resolveActiveEvent(el.getAttribute('data-choice'));else if(action==='selectEventDef'){var ns=ensureEventFrameworkState();ns.selectedEventId=el.getAttribute('data-id');render();}else if(action==='createEventDef')createEventDefinition();else if(action==='duplicateEventDef')duplicateEventDefinition();else if(action==='deleteEventDef')deleteEventDefinition();else if(action==='toggleEventDef')toggleEventDefinition();else if(action==='saveEventDef')saveSelectedEventFromEditor();else if(action==='validateEventDef'){var nv=ensureEventFrameworkState();nv.eventValidation=validateEventDefinition(selectedEventDefinition());render();}else if(action==='previewEventDef'){var pd=selectedEventDefinition();if(pd)queueEvent(pd,'Editor preview',true);render();}else if(action==='testEventDef'){var td=selectedEventDefinition();if(td)queueEvent(td,'Editor test trigger',false);render();}else if(action==='exportEventDefs')exportEventDefinitions();else if(action==='importEventDefs')importEventDefinitions();else if(action==='addBuilderRow')addBuilderRow(el.getAttribute('data-kind'));else if(action==='filterEventDefs'){var nf=ensureEventFrameworkState();nf.eventFilters.search=editorFieldValue('event-search');render();}else if(action==='pause'){setAutoContinue(false);state.stopReason='Paused manually';render();}else if(action==='continue')next();else if(action==='save')saveGame();else if(action==='load')loadGame();else if(action==='new')location.reload();else if(action==='randomCity')generateProceduralCity('city-'+Date.now());else if(action==='readMessage'){state.messages[parseInt(el.getAttribute('data-index'),10)].read=true;render();}});
 document.addEventListener('click',function(e){if(state.tab!=='Family'||!state.selectedFamilyProfile||state.selectedFamilyProfile==='player')return;if(state.familySubtab==='Mafia Family'&&mafiaTreeDrag&&mafiaTreeDrag.moved){setTimeout(function(){mafiaTreeDrag.moved=false;},80);return;}if(state.familySubtab==='Blood Family'&&(e.target.closest('.tree-person')||e.target.closest('.family-popover')||e.target.closest('.opinion-tooltip')))return;if(state.familySubtab==='Mafia Family'&&(e.target.closest('.mafia-person')||e.target.closest('.family-popover')||e.target.closest('.opinion-tooltip')))return;state.selectedFamilyProfile='player';render();});
-document.addEventListener('contextmenu',function(e){e.preventDefault();if(state.timeMoving){closeTimeDrawer();return;}if(state.safehouseFocus){exitSafehouseView();return;}if(state.tab==='Family'&&state.selectedFamilyProfile&&state.selectedFamilyProfile!=='player'){state.selectedFamilyProfile='player';render();return;}if(state.mapMode==='district'||state.tab==='District'){backFromDistrict(e);return;}if(state.tab&&state.tab!=='Dashboard'){state.tab=state.tab==='Family'?'City':'Dashboard';render();}});
-document.addEventListener('keydown',function(e){var tag=(e.target&&e.target.tagName||'').toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select')return;if((e.key===' '||e.code==='Space')&&state.extortionEncounter&&state.extortionEncounter.active){e.preventDefault();resolveExtortionQte();return;}if(e.key==='Escape'&&state.extortionEncounter){e.preventDefault();state.extortionEncounter=null;state.stopReason='Extortion attempt cancelled.';refreshExtortionModal();if(state.pendingDistrictRefresh){state.pendingDistrictRefresh=false;updateMountedRacketVisuals();}refreshLiveTimeUI(true);return;}if(e.key==='Escape'&&state.timeMoving){e.preventDefault();closeTimeDrawer();return;}if(e.key===' '||e.code==='Space'){e.preventDefault();if(state.timeMoving)closeTimeDrawer();else startMovingTime();return;}var speedKeys={'1':1,'2':20,'3':40,'4':100,'5':500};if(speedKeys[e.key]){e.preventDefault();setTimeSpeed(speedKeys[e.key]);}},true);
+document.addEventListener('contextmenu',function(e){e.preventDefault();if(document.body.dataset.deskdon3dPointer==='1'||(e.target.closest&&e.target.closest('.map-main,.district-three-root,.city-map-shell'))){return;}if(state.timeMoving){closeTimeDrawer();return;}if(state.safehouseFocus){exitSafehouseView();return;}if(state.tab==='Family'&&state.selectedFamilyProfile&&state.selectedFamilyProfile!=='player'){state.selectedFamilyProfile='player';render();return;}if(state.mapMode==='district'||state.tab==='District'){backFromDistrict(e);return;}if(state.tab&&state.tab!=='Dashboard'){state.tab=state.tab==='Family'?'City':'Dashboard';render();}});
+document.addEventListener('keydown',function(e){var tag=(e.target&&e.target.tagName||'').toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select')return;if(e.key==='Tab'){e.preventDefault();toggleSidebarCollapsed();return;}if((e.key===' '||e.code==='Space')&&state.extortionEncounter&&state.extortionEncounter.active){e.preventDefault();resolveExtortionQte();return;}if(e.key==='Escape'&&state.extortionEncounter){e.preventDefault();state.extortionEncounter=null;state.stopReason='Extortion attempt cancelled.';refreshExtortionModal();if(state.pendingDistrictRefresh){state.pendingDistrictRefresh=false;updateMountedRacketVisuals();}refreshLiveTimeUI(true);return;}if(e.key==='Escape'&&state.timeMoving){e.preventDefault();closeTimeDrawer();return;}if(e.key===' '||e.code==='Space'){e.preventDefault();if(state.timeMoving)closeTimeDrawer();else startMovingTime();return;}var speedKeys={'1':1,'2':20,'3':40,'4':100,'5':500};if(speedKeys[e.key]){e.preventDefault();setTimeSpeed(speedKeys[e.key]);if(!state.timeMoving)startMovingTime();}},true);
 function creatorTooltip(){var t=document.getElementById('creator-tooltip');if(!t){t=document.createElement('div');t.id='creator-tooltip';t.className='creator-tooltip';document.body.appendChild(t);}return t;}
 function showCreatorTooltip(el,e){var t=creatorTooltip(),cat=el.getAttribute('data-tip-cat')||'Info',name=el.getAttribute('data-tip-name')||'',quote=el.getAttribute('data-tip-quote')||'',effects=(el.getAttribute('data-tip-effects')||'').split('|').filter(Boolean);t.innerHTML='<span class="tip-cat tip-cat-'+cat.toLowerCase().replace(/[^a-z]+/g,'-')+'">'+esc(cat)+'</span><b>'+esc(name)+'</b>'+(quote?'<em>"'+esc(quote)+'"</em>':'')+effects.map(function(row){var cls=row.indexOf('---')>=0||row.indexOf('--')>=0||/ -$/.test(row)?'neg':row.indexOf('+++')>=0||row.indexOf('++')>=0||row.indexOf('+')>=0?'pos':'muted';return'<span class="'+cls+'">'+esc(row)+'</span>';}).join('');t.classList.add('visible');moveCreatorTooltip(e);}
 function moveCreatorTooltip(e){var t=document.getElementById('creator-tooltip');if(!t||!t.classList.contains('visible')||!e)return;var x=e.clientX+16,y=e.clientY+16,w=t.offsetWidth||320,h=t.offsetHeight||160;if(x+w>window.innerWidth-12)x=e.clientX-w-16;if(y+h>window.innerHeight-12)y=e.clientY-h-16;t.style.left=Math.max(8,x)+'px';t.style.top=Math.max(8,y)+'px';}
 function hideCreatorTooltip(){var t=document.getElementById('creator-tooltip');if(t)t.classList.remove('visible');}
 document.addEventListener('mousemove',function(e){var el=e.target.closest('[data-tip-cat]');if(el)showCreatorTooltip(el,e);else hideCreatorTooltip();});
 document.addEventListener('mouseleave',hideCreatorTooltip);
+document.addEventListener('click',function(e){var el=e.target.closest('[data-action="focusIsland"]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();var islandId=el.getAttribute('data-island');if((e.detail||1)>1||(islandId===currentIslandId()&&state.mapMode==='city'))selectIsland(islandId);else focusIsland(islandId);},true);
+document.addEventListener('dblclick',function(e){var el=e.target.closest('[data-action="focusIsland"]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();selectIsland(el.getAttribute('data-island'));},true);
+document.addEventListener('click',function(e){var el=e.target.closest('[data-action="selectIsland"]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();selectIsland(el.getAttribute('data-island'));},true);
+function autoPickStartupCharacter(){
+  if(typeof generateCreatorCharacter!=='function'||typeof acceptCharacter!=='function')return;
+  state.creatorCharacter=generateCreatorCharacter('startup-character-'+Date.now()+'-'+Math.random());
+  var before=(state.messages||[]).length;
+  acceptCharacter();
+  if((state.messages||[]).length>before&&state.messages[0]&&state.messages[0].title==='Starting character accepted')state.messages.shift();
+  state.tab='Dashboard';
+  state.mapMode='city';
+  state.stopReason='Paused manually';
+  render();
+}
 generateProceduralCity('city-'+Date.now(),true);
+autoPickStartupCharacter();
