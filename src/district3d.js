@@ -36,6 +36,8 @@ const FLOOR_HEIGHT = 2.35;
 const HEIGHT_SCALE = 0.33;
 const INFO_AREA_SCALE = 13;
 const ICON_FONT = new FontLoader().parse(helvetikerBold);
+const GRID_ROAD_COLOR = 0x0d0c0a;
+const GRID_SIDEWALK_COLOR = 0x454942;
 const emptyDebug = {
   boundary: true,
   parcelOutlines: true,
@@ -479,8 +481,88 @@ function applyPayloadParcelIdentities(blocks, payload, rotateVertical, pivot) {
   });
 }
 
+function normalizeOperationalState(value) {
+  value = String(value?.state || value || 'Active').toLowerCase();
+  return value === 'inactive' ? 'Inactive' : 'Active';
+}
+
+function applyPayloadBuildingState(parcel, payload) {
+  if (!parcel) return parcel;
+  const record = (payload?.buildingStates || {})[parcel.id];
+  const state = normalizeOperationalState(record || parcel.operationalState || parcel.status);
+  parcel.operationalState = state;
+  parcel.isActive = state === 'Active';
+  parcel.isInactive = !parcel.isActive;
+  const protectedRecord = (payload?.protectedBusinesses || {})[parcel.id];
+  if (protectedRecord) {
+    parcel.mafiaProtected = true;
+    parcel.mafiaControlled = !!protectedRecord.controlled;
+    parcel.protectionFamily = protectedRecord.family || 'player';
+    parcel.protectionColor = protectedRecord.color || payload.mafiaColor || '#ff1d1d';
+    parcel.racketWeeklyDue = protectedRecord.weeklyDue || parcel.racketWeeklyDue || 0;
+    parcel.racketReady = !!protectedRecord.ready;
+  }
+  return parcel;
+}
+
+function applyPayloadBuildingStatesToBlocks(blocks, payload) {
+  (blocks || []).forEach((block) => (block.parcels || []).forEach((parcel) => applyPayloadBuildingState(parcel, payload)));
+  return blocks;
+}
+
+function generatePayloadGridDistrict(payload) {
+  const outputPoly = cleanWorldPoly(payload.outerPolygon || []);
+  const outputRoads = (payload.roads || [])
+    .filter((road) => road?.a && road?.b)
+    .map((road, index) => ({
+      ...road,
+      id: road.id || `metro-road-${index}`,
+      a: { x: Number(road.a.x) || 0, y: Number(road.a.y) || 0 },
+      b: { x: Number(road.b.x) || 0, y: Number(road.b.y) || 0 },
+      width: Number(road.width) || 10,
+      kind: road.kind || 'minor',
+    }));
+  const outputBlocks = (payload.blocks || [])
+    .map((block, blockIndex) => {
+      const blockPoly = cleanWorldPoly(block.polygon || []);
+      return {
+        ...block,
+        id: block.id || `metro-block-${blockIndex}`,
+        label: block.label || `Block ${blockIndex + 1}`,
+        districtId: block.districtId || payload.district?.id || 'district',
+        polygon: blockPoly,
+        parcels: (block.parcels || [])
+          .map((parcel, parcelIndex) => {
+            const next = sanitizeSceneParcel({
+              ...parcel,
+              id: parcel.id || `${block.id || `metro-block-${blockIndex}`}_p${parcelIndex}`,
+              blockId: parcel.blockId || block.id || `metro-block-${blockIndex}`,
+              districtId: parcel.districtId || block.districtId || payload.district?.id || 'district',
+              polygon: cleanWorldPoly(parcel.polygon || []),
+            });
+            if (next.isBuildable !== false) next.isBuildable = true;
+            if (next.isBuildable && (!next.buildingPolygon || next.buildingPolygon.length < 3)) next.buildingPolygon = next.polygon;
+            return applyPayloadBuildingState(next, payload);
+          })
+          .filter((parcel) => parcel.polygon && parcel.polygon.length >= 3),
+      };
+    })
+    .filter((block) => block.polygon && block.polygon.length >= 3);
+  return {
+    version: RENDERER_VERSION,
+    style: payload.gridLabel || 'METRO_GRID_12X12',
+    outerPolygon: outputPoly,
+    contextDistricts: [],
+    roads: outputRoads,
+    blocks: outputBlocks,
+    generationTransform: 'payload-metro-grid',
+    validation: validateGeneratedDistrict(outputPoly, outputRoads, outputBlocks),
+  };
+}
+
 function generate3dDistrict(payload) {
   const sourcePoly = cleanWorldPoly(payload.outerPolygon || []);
+  if (payload.gridCityView && payload.blocks?.length) return generatePayloadGridDistrict(payload);
   const sourceBounds = bounds(sourcePoly);
   const pivot = { x: (sourceBounds.minX + sourceBounds.maxX) / 2, y: (sourceBounds.minY + sourceBounds.maxY) / 2 };
   const sourceWidth = sourceBounds.maxX - sourceBounds.minX;
@@ -660,6 +742,7 @@ function generate3dDistrict(payload) {
       const parcel = commercial.find((p) => p.id === id) || blocks.flatMap((block) => block.parcels || []).find((p) => p.id === id);
       if (parcel) {
         parcel.mafiaProtected = true;
+        parcel.mafiaControlled = !!protectedState[id].controlled;
         parcel.protectionFamily = protectedState[id].family || 'player';
         parcel.protectionColor = protectedState[id].color || payload.mafiaColor || '#6fb35e';
         parcel.racketWeeklyDue = protectedState[id].weeklyDue || 0;
@@ -668,6 +751,7 @@ function generate3dDistrict(payload) {
     });
   }
   applyPayloadParcelIdentities(blocks, payload, rotateVertical, pivot);
+  applyPayloadBuildingStatesToBlocks(blocks, payload);
   const outputPoly = rotateVertical ? sourcePoly : districtPoly;
   const outputRoads = rotateVertical ? roads.map((road) => transformRoad(road, unrotateGeneratedPoint, pivot)) : roads;
   const outputBlocks = rotateVertical ? blocks.map((block) => transformBlock(block, unrotateGeneratedPoint, pivot)) : blocks;
@@ -1035,6 +1119,39 @@ function addLineLoop(scene, poly, center, scale, color, y) {
   return line;
 }
 
+function addBlockSidewalkBand(scene, poly, center, scale, options = {}) {
+  if (!poly || poly.length < 2) return null;
+  const width = options.width ?? 7.5;
+  const y = options.y ?? 0.029;
+  const color = options.color ?? 0x363936;
+  const material = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+  const group = new THREE.Group();
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 3) continue;
+    const px = (-dy / len) * width * 0.5;
+    const py = (dx / len) * width * 0.5;
+    const strip = [
+      { x: a.x + px, y: a.y + py },
+      { x: b.x + px, y: b.y + py },
+      { x: b.x - px, y: b.y - py },
+      { x: a.x - px, y: a.y - py },
+    ];
+    const geo = new THREE.ShapeGeometry(shapeFromPoly(strip, center, scale));
+    geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.y = y;
+    group.add(mesh);
+  }
+  if (!group.children.length) return null;
+  scene.add(group);
+  return group;
+}
+
 function muteObjectMaterials(obj, color, opacity) {
   obj.traverse((child) => {
     if (!child.material) return;
@@ -1062,14 +1179,18 @@ function roadPolysClippedToDistrict(roadPoly, outerPolygon) {
   return out;
 }
 
-function roadMesh(road, center, scale, aPoint, bPoint, outerPolygon) {
+function gridRoadSideClearance(width) {
+  return Math.max(12, Math.round((width || 12) * 0.5 + 7));
+}
+
+function roadMesh(road, center, scale, aPoint, bPoint, outerPolygon, options = {}) {
   const sourceA = aPoint || road.a;
   const sourceB = bPoint || road.b;
   const dxSource = sourceB.x - sourceA.x;
   const dySource = sourceB.y - sourceA.y;
   const lenSource = Math.max(0.001, Math.hypot(dxSource, dySource));
   const halfWidth = (road.width || 12) * 0.5;
-  const cap = halfWidth * 0.65;
+  const cap = halfWidth * (options.capScale ?? 0.65);
   const ux = dxSource / lenSource;
   const uy = dySource / lenSource;
   const px = -uy * halfWidth;
@@ -1090,8 +1211,11 @@ function roadMesh(road, center, scale, aPoint, bPoint, outerPolygon) {
     avenue: 0x262a2e,
     main: 0x262a2e,
   };
-  const mat = new THREE.MeshLambertMaterial({ color: roadColors[road.kind] || 0x30343b });
-  const roadY = road.kind === 'highway' ? 0.038 : road.kind === 'arterial' ? 0.036 : road.kind === 'collector' ? 0.034 : 0.032;
+  const roadColor = options.color ?? (roadColors[road.kind] || 0x30343b);
+  const mat = options.basic
+    ? new THREE.MeshBasicMaterial({ color: roadColor, side: THREE.DoubleSide })
+    : new THREE.MeshLambertMaterial({ color: roadColor, side: THREE.DoubleSide });
+  const roadY = options.y ?? (road.kind === 'highway' ? 0.038 : road.kind === 'arterial' ? 0.036 : road.kind === 'collector' ? 0.034 : 0.032);
   const clippedPolys = outerPolygon ? roadPolysClippedToDistrict(roadPoly, outerPolygon) : [roadPoly];
   const validPolys = clippedPolys.filter((poly) => poly.length >= 3 && Math.abs(areaFromPoly(poly)) > 0.5);
   if (!validPolys.length) return null;
@@ -1104,6 +1228,46 @@ function roadMesh(road, center, scale, aPoint, bPoint, outerPolygon) {
     group.add(mesh);
   });
   return group;
+}
+
+function sidewalkMeshForRoad(road, center, scale, aPoint, bPoint, outerPolygon, options = {}) {
+  const sourceA = aPoint || road.a;
+  const sourceB = bPoint || road.b;
+  const dxSource = sourceB.x - sourceA.x;
+  const dySource = sourceB.y - sourceA.y;
+  const lenSource = Math.max(0.001, Math.hypot(dxSource, dySource));
+  const halfWidth = (road.width || 12) * 0.5;
+  const outerOffset = options.outerOffset ?? gridRoadSideClearance(road.width || 12);
+  const cap = halfWidth * (options.capScale ?? 0.65);
+  const ux = dxSource / lenSource;
+  const uy = dySource / lenSource;
+  const nx = -uy;
+  const ny = ux;
+  const a = { x: sourceA.x - ux * cap, y: sourceA.y - uy * cap };
+  const b = { x: sourceB.x + ux * cap, y: sourceB.y + uy * cap };
+  const mat = new THREE.MeshLambertMaterial({ color: options.color ?? GRID_SIDEWALK_COLOR, side: THREE.DoubleSide, depthWrite: true });
+  const group = new THREE.Group();
+  [-1, 1].forEach((side) => {
+    const inner = halfWidth;
+    const outer = Math.max(inner + 1, outerOffset);
+    const strip = [
+      { x: a.x + nx * inner * side, y: a.y + ny * inner * side },
+      { x: b.x + nx * inner * side, y: b.y + ny * inner * side },
+      { x: b.x + nx * outer * side, y: b.y + ny * outer * side },
+      { x: a.x + nx * outer * side, y: a.y + ny * outer * side },
+    ];
+    const clippedPolys = outerPolygon ? roadPolysClippedToDistrict(strip, outerPolygon) : [strip];
+    clippedPolys
+      .filter((poly) => poly.length >= 3 && Math.abs(areaFromPoly(poly)) > 0.5)
+      .forEach((poly) => {
+        const geo = new THREE.ShapeGeometry(shapeFromPoly(poly, center, scale));
+        geo.rotateX(-Math.PI / 2);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = options.y ?? 0.031;
+        group.add(mesh);
+      });
+  });
+  return group.children.length ? group : null;
 }
 
 function roadAxisSpanThroughPolygon(road, outerPolygon) {
@@ -1171,11 +1335,56 @@ function roadSpanBlockedByBuildings(span, buildingFootprints, roadWidth = 12) {
   return blocked / Math.max(1, sampleCount - 1) > 0.08 || longestRun >= 3;
 }
 
-function clippedRoadMeshes(scene, road, outerPolygon, center, scale, debugGroup, buildingFootprints = []) {
+function addGridRoadIntersectionPatches(scene, roads, outerPolygon, center, scale) {
+  const entries = (roads || [])
+    .map((road) => ({ road, span: roadAxisSpanThroughPolygon(road, outerPolygon) }))
+    .filter((entry) => entry.span)
+    .map((entry) => {
+      const dx = entry.span.b.x - entry.span.a.x;
+      const dy = entry.span.b.y - entry.span.a.y;
+      return { ...entry, vertical: Math.abs(dy) >= Math.abs(dx) };
+    });
+  const vertical = entries.filter((entry) => entry.vertical);
+  const horizontal = entries.filter((entry) => !entry.vertical);
+  const mat = new THREE.MeshLambertMaterial({ color: GRID_ROAD_COLOR, side: THREE.DoubleSide });
+  const group = new THREE.Group();
+  vertical.forEach((v) => {
+    const x = (v.span.a.x + v.span.b.x) * 0.5;
+    const minY = Math.min(v.span.a.y, v.span.b.y) - 0.1;
+    const maxY = Math.max(v.span.a.y, v.span.b.y) + 0.1;
+    horizontal.forEach((h) => {
+      const y = (h.span.a.y + h.span.b.y) * 0.5;
+      const minX = Math.min(h.span.a.x, h.span.b.x) - 0.1;
+      const maxX = Math.max(h.span.a.x, h.span.b.x) + 0.1;
+      if (x < minX || x > maxX || y < minY || y > maxY) return;
+      const halfW = Math.max(1, (v.road.width || 12) * 0.5);
+      const halfH = Math.max(1, (h.road.width || 12) * 0.5);
+      const patch = [
+        { x: x - halfW, y: y - halfH },
+        { x: x + halfW, y: y - halfH },
+        { x: x + halfW, y: y + halfH },
+        { x: x - halfW, y: y + halfH },
+      ];
+      const clipped = outerPolygon ? roadPolysClippedToDistrict(patch, outerPolygon) : [patch];
+      clipped
+        .filter((poly) => poly.length >= 3 && Math.abs(areaFromPoly(poly)) > 0.5)
+        .forEach((poly) => {
+          const geo = new THREE.ShapeGeometry(shapeFromPoly(poly, center, scale));
+          geo.rotateX(-Math.PI / 2);
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.y = 0.041;
+          group.add(mesh);
+        });
+    });
+  });
+  if (group.children.length) scene.add(group);
+}
+
+function clippedRoadMeshes(scene, road, outerPolygon, center, scale, debugGroup, buildingFootprints = [], options = {}) {
   const span = roadAxisSpanThroughPolygon(road, outerPolygon);
   if (!span) return;
-  if (!road.seam && !road.perimeter && roadSpanBlockedByBuildings(span, buildingFootprints, road.width || 12)) return;
-  const mesh = roadMesh(road, center, scale, span.a, span.b, outerPolygon);
+  if (!options.ignoreBuildingFootprints && !road.seam && !road.perimeter && roadSpanBlockedByBuildings(span, buildingFootprints, road.width || 12)) return;
+  const mesh = roadMesh(road, center, scale, span.a, span.b, outerPolygon, options);
   if (mesh) scene.add(mesh);
   if (!debugGroup) return;
   const segments = 80;
@@ -1190,6 +1399,101 @@ function clippedRoadMeshes(scene, road, outerPolygon, center, scale, debugGroup,
       debugGroup.add(dot);
     }
   }
+}
+
+function addRoadNameLabels(scene, roads, outerPolygon, center, scale) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xe9d187,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+    depthTest: true,
+  });
+  const placedRects = [];
+  const labelEntries = (roads || []).map((road) => {
+    if (!(road?.streetName || road?.name) || !road.a || !road.b) return;
+    const span = roadAxisSpanThroughPolygon(road, outerPolygon);
+    if (!span) return;
+    const dx = span.b.x - span.a.x;
+    const dy = span.b.y - span.a.y;
+    const sourceLength = Math.hypot(dx, dy);
+    const worldLength = sourceLength * scale;
+    if (worldLength < 8) return;
+    const label = String(road.streetName || road.name).trim().toUpperCase();
+    if (!label) return;
+    return { road, span, dx, dy, worldLength, label, priority: (road.width || 10) * (road.kind === 'avenue' ? 1.45 : road.kind === 'collector' ? 1.18 : 1) };
+  }).filter(Boolean).sort((a, b) => b.priority - a.priority || b.worldLength - a.worldLength);
+  const rectsOverlap = (a, b) => !(a.maxX < b.minX || a.minX > b.maxX || a.maxZ < b.minZ || a.minZ > b.maxZ);
+  const overlapArea = (a, b) => Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX)) * Math.max(0, Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ));
+  labelEntries.forEach((entry) => {
+    const { road, span, dx, dy, worldLength, label } = entry;
+    const roadWidth = Number(road.width || 10);
+    const widthFactor = Math.max(0, Math.min(1, (roadWidth - 8) / 24));
+    const kindBoost = road.kind === 'avenue' ? 0.18 : road.kind === 'collector' ? 0.07 : 0;
+    const size = 0.42 + widthFactor * 0.32 + kindBoost;
+    const geometry = new TextGeometry(label, {
+      font: ICON_FONT,
+      size,
+      depth: 0.006,
+      curveSegments: 1,
+      bevelEnabled: false,
+    });
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const width = Math.max(0.001, box.max.x - box.min.x);
+    const height = Math.max(0.001, box.max.y - box.min.y);
+    const fit = Math.min(1, (worldLength * 0.68) / width);
+    if (fit < 0.42) {
+      geometry.dispose();
+      return;
+    }
+    geometry.translate(-box.min.x - width * 0.5, -box.min.y - height * 0.5, 0);
+    geometry.rotateX(-Math.PI / 2);
+    let angle = Math.atan2(dy, dx);
+    if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+    const labelWidth = width * fit;
+    const labelHeight = height * fit;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rectAt = (wp) => {
+      const pad = 0.36;
+      const halfX = (Math.abs(cos) * labelWidth + Math.abs(sin) * labelHeight) * 0.5 + pad;
+      const halfZ = (Math.abs(sin) * labelWidth + Math.abs(cos) * labelHeight) * 0.5 + pad;
+      return { minX: wp.x - halfX, maxX: wp.x + halfX, minZ: wp.y - halfZ, maxZ: wp.y + halfZ };
+    };
+    const labelLaneOffset = roadWidth * 0.18;
+    const sourceLength = Math.max(0.001, Math.hypot(dx, dy));
+    const laneX = (-dy / sourceLength) * labelLaneOffset;
+    const laneY = (dx / sourceLength) * labelLaneOffset;
+    const candidates = [0.5, 0.32, 0.68, 0.22, 0.78, 0.14, 0.86].map((t) => ({ t, side: 0 }))
+      .concat([0.28, 0.72, 0.18, 0.82].flatMap((t) => [{ t, side: 1 }, { t, side: -1 }]));
+    let chosen = null;
+    candidates.forEach((candidate) => {
+      if (chosen && chosen.score === 0) return;
+      const p = {
+        x: span.a.x + dx * candidate.t + laneX * candidate.side,
+        y: span.a.y + dy * candidate.t + laneY * candidate.side,
+      };
+      const wp = worldPoint(p, center, scale);
+      const rect = rectAt(wp);
+      const score = placedRects.reduce((sum, other) => sum + overlapArea(rect, other), 0);
+      if (!chosen || score < chosen.score) chosen = { wp, rect, score };
+    });
+    if (!chosen) {
+      geometry.dispose();
+      return;
+    }
+    const wp = chosen.wp;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.scale.setScalar(fit);
+    mesh.rotation.y = -angle;
+    mesh.position.set(wp.x, 0.064, wp.y);
+    mesh.renderOrder = 9;
+    placedRects.push(chosen.rect);
+    group.add(mesh);
+  });
+  if (group.children.length) scene.add(group);
 }
 
 function bounds(poly) {
@@ -1831,6 +2135,859 @@ function addProtectionOverlay(group, footprint, center, scale, wp, width, depth,
   return overlay;
 }
 
+function territoryFootprintWorldPoints(footprint, center, scale, wp, width, depth) {
+  if (footprint && footprint.length >= 3) {
+    const points = footprint.map((source) => worldPoint(source, center, scale));
+    const c = centroid(points);
+    return points.map((p) => {
+      const dx = p.x - c.x;
+      const dy = p.y - c.y;
+      const len = Math.max(0.001, Math.hypot(dx, dy));
+      return { x: p.x + (dx / len) * 0.12, y: p.y + (dy / len) * 0.12 };
+    });
+  }
+  const w = Math.max(0.18, width || 1) * 0.56;
+  const d = Math.max(0.18, depth || 1) * 0.56;
+  return [
+    { x: wp.x - w, y: wp.y - d },
+    { x: wp.x + w, y: wp.y - d },
+    { x: wp.x + w, y: wp.y + d },
+    { x: wp.x - w, y: wp.y + d },
+  ];
+}
+
+function addTerritoryEdgeBar(group, a, b, material, thickness, y, renderOrder, height = 0.018) {
+  const dx = b.x - a.x;
+  const dz = b.y - a.y;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.02) return;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(len, height, thickness), material);
+  mesh.position.set((a.x + b.x) / 2, y, (a.y + b.y) / 2);
+  mesh.rotation.y = -Math.atan2(dz, dx);
+  mesh.renderOrder = renderOrder;
+  group.add(mesh);
+}
+
+function convexHullWorldPoints(points) {
+  const sorted = (points || [])
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+  const unique = [];
+  sorted.forEach((p) => {
+    const last = unique[unique.length - 1];
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 0.01) unique.push({ x: p.x, y: p.y });
+  });
+  if (unique.length <= 3) return unique;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  unique.forEach((p) => {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  });
+  const upper = [];
+  for (let i = unique.length - 1; i >= 0; i -= 1) {
+    const p = unique[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function expandWorldPolygon(poly, amount) {
+  if (!poly || poly.length < 3) return poly || [];
+  const c = centroid(poly);
+  return poly.map((p) => {
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    const len = Math.max(0.001, Math.hypot(dx, dy));
+    return { x: p.x + (dx / len) * amount, y: p.y + (dy / len) * amount };
+  });
+}
+
+function territoryFootprintFromBuilding(building) {
+  if (!building) return [];
+  if (building.worldFootprint && building.worldFootprint.length >= 3) {
+    const c = centroid(building.worldFootprint);
+    return building.worldFootprint.map((p) => {
+      const dx = p.x - c.x;
+      const dy = p.y - c.y;
+      const len = Math.max(0.001, Math.hypot(dx, dy));
+      return { x: p.x + (dx / len) * 0.18, y: p.y + (dy / len) * 0.18 };
+    });
+  }
+  const center = building.center || { x: 0, y: 0 };
+  return territoryFootprintWorldPoints(null, { x: 0, y: 0 }, 1, center, building.width || 1, building.depth || 1);
+}
+
+function shouldIncludeInMafiaTerritory(building) {
+  const parcel = building?.parcel || {};
+  return !!(parcel.mafiaControlled || parcel.isFamilyEstate || parcel.subtype === 'Family Estate');
+}
+
+function territoryRectForBuilding(building) {
+  const footprint = territoryFootprintFromBuilding(building);
+  if (!footprint.length) return null;
+  const b = bounds(footprint);
+  return {
+    building,
+    footprint,
+    minX: b.minX,
+    maxX: b.maxX,
+    minZ: b.minY,
+    maxZ: b.maxY,
+    cx: (b.minX + b.maxX) / 2,
+    cz: (b.minY + b.maxY) / 2,
+  };
+}
+
+function territoryBuildingSortKey(entries) {
+  const points = entries.map((entry) => ({ x: entry.cx, z: entry.cz }));
+  const center = points.length
+    ? points.reduce((sum, p) => ({ x: sum.x + p.x / points.length, z: sum.z + p.z / points.length }), { x: 0, z: 0 })
+    : { x: 0, z: 0 };
+  return (a, b) => {
+    return Math.atan2(a.cz - center.z, a.cx - center.x) - Math.atan2(b.cz - center.z, b.cx - center.x);
+  };
+}
+
+function clampTerritory(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function contactOnTerritoryRect(entry, toward) {
+  const dx = toward.x - entry.cx;
+  const dz = toward.z - entry.cz;
+  if (Math.abs(dx) >= Math.abs(dz)) {
+    return {
+      x: dx >= 0 ? entry.maxX : entry.minX,
+      z: clampTerritory(toward.z, entry.minZ, entry.maxZ),
+    };
+  }
+  return {
+    x: clampTerritory(toward.x, entry.minX, entry.maxX),
+    z: dz >= 0 ? entry.maxZ : entry.minZ,
+  };
+}
+
+function territoryRectCorners(entry) {
+  return [
+    { x: entry.minX, z: entry.minZ },
+    { x: entry.maxX, z: entry.minZ },
+    { x: entry.maxX, z: entry.maxZ },
+    { x: entry.minX, z: entry.maxZ },
+  ];
+}
+
+function sameTerritoryPoint(a, b) {
+  return Math.hypot((a?.x || 0) - (b?.x || 0), (a?.z || 0) - (b?.z || 0)) < 0.04;
+}
+
+function territoryCornerToward(entry, toward) {
+  return {
+    x: toward.x >= entry.cx ? entry.maxX : entry.minX,
+    z: toward.z >= entry.cz ? entry.maxZ : entry.minZ,
+  };
+}
+
+function isEstateTerritoryEntry(entry) {
+  const parcel = entry?.building?.parcel || {};
+  return !!(parcel.isFamilyEstate || parcel.subtype === 'Family Estate');
+}
+
+function territoryEntryStableKey(entry) {
+  const parcel = entry?.building?.parcel || {};
+  return String(parcel.id || parcel.name || entry?.building?.uuid || `${entry.cx}:${entry.cz}`);
+}
+
+function territoryCornerPairForNeighbors(entry, prev, next) {
+  const incoming = territoryCornerToward(entry, { x: prev.cx, z: prev.cz });
+  const outgoing = territoryCornerToward(entry, { x: next.cx, z: next.cz });
+  if (!sameTerritoryPoint(incoming, outgoing)) return { in: incoming, out: outgoing };
+
+  const avg = {
+    x: (prev.cx + next.cx) * 0.5 - entry.cx,
+    z: (prev.cz + next.cz) * 0.5 - entry.cz,
+  };
+  const pair = Math.abs(avg.x) >= Math.abs(avg.z)
+    ? [
+        { x: avg.x >= 0 ? entry.maxX : entry.minX, z: entry.minZ },
+        { x: avg.x >= 0 ? entry.maxX : entry.minX, z: entry.maxZ },
+      ]
+    : [
+        { x: entry.minX, z: avg.z >= 0 ? entry.maxZ : entry.minZ },
+        { x: entry.maxX, z: avg.z >= 0 ? entry.maxZ : entry.minZ },
+      ];
+  const scoreA = Math.hypot(pair[0].x - prev.cx, pair[0].z - prev.cz) + Math.hypot(pair[1].x - next.cx, pair[1].z - next.cz);
+  const scoreB = Math.hypot(pair[1].x - prev.cx, pair[1].z - prev.cz) + Math.hypot(pair[0].x - next.cx, pair[0].z - next.cz);
+  return scoreA <= scoreB ? { in: pair[0], out: pair[1] } : { in: pair[1], out: pair[0] };
+}
+
+function territoryPerimeterPosition(entry, point) {
+  const w = Math.max(0.001, entry.maxX - entry.minX);
+  const d = Math.max(0.001, entry.maxZ - entry.minZ);
+  const eps = 0.04;
+  if (Math.abs(point.z - entry.minZ) < eps) return clampTerritory(point.x - entry.minX, 0, w);
+  if (Math.abs(point.x - entry.maxX) < eps) return w + clampTerritory(point.z - entry.minZ, 0, d);
+  if (Math.abs(point.z - entry.maxZ) < eps) return w + d + clampTerritory(entry.maxX - point.x, 0, w);
+  return w + d + w + clampTerritory(entry.maxZ - point.z, 0, d);
+}
+
+function territoryPointAtPerimeter(entry, t) {
+  const w = Math.max(0.001, entry.maxX - entry.minX);
+  const d = Math.max(0.001, entry.maxZ - entry.minZ);
+  const perimeter = 2 * (w + d);
+  t = ((t % perimeter) + perimeter) % perimeter;
+  if (t <= w) return { x: entry.minX + t, z: entry.minZ };
+  if (t <= w + d) return { x: entry.maxX, z: entry.minZ + (t - w) };
+  if (t <= w + d + w) return { x: entry.maxX - (t - w - d), z: entry.maxZ };
+  return { x: entry.minX, z: entry.maxZ - (t - w - d - w) };
+}
+
+function territoryPerimeterPath(entry, from, to) {
+  const w = Math.max(0.001, entry.maxX - entry.minX);
+  const d = Math.max(0.001, entry.maxZ - entry.minZ);
+  const perimeter = 2 * (w + d);
+  const a = territoryPerimeterPosition(entry, from);
+  const b = territoryPerimeterPosition(entry, to);
+  const clockwiseDistance = ((b - a) + perimeter) % perimeter;
+  const counterDistance = perimeter - clockwiseDistance;
+  const clockwise = clockwiseDistance <= counterDistance;
+  const distance = clockwise ? clockwiseDistance : counterDistance;
+  const step = Math.max(0.35, Math.min(1.4, distance / 4));
+  const path = [from];
+  for (let t = step; t < distance - 0.05; t += step) {
+    path.push(territoryPointAtPerimeter(entry, a + (clockwise ? t : -t)));
+  }
+  path.push(to);
+  return path;
+}
+
+function territoryRectLoop(entry) {
+  return [
+    { x: entry.minX, z: entry.minZ },
+    { x: entry.maxX, z: entry.minZ },
+    { x: entry.maxX, z: entry.maxZ },
+    { x: entry.minX, z: entry.maxZ },
+    { x: entry.minX, z: entry.minZ },
+  ];
+}
+
+function addTerritoryPolyline(outline, path, glow, core) {
+  const clean = (path || []).filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.z));
+  for (let i = 0; i < clean.length - 1; i += 1) {
+    const a = { x: clean[i].x, y: clean[i].z };
+    const b = { x: clean[i + 1].x, y: clean[i + 1].z };
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 0.035) continue;
+    addTerritoryEdgeBar(outline, a, b, glow, 0.18, 0.13, 12);
+    addTerritoryEdgeBar(outline, a, b, core, 0.055, 0.145, 13);
+  }
+}
+
+function territoryObstaclePolys(buildingMap, excludedBuildings = new Set()) {
+  const obstacles = [];
+  buildingMap?.forEach((building) => {
+    if (excludedBuildings.has(building)) return;
+    const footprint = building.worldFootprint && building.worldFootprint.length >= 3
+      ? building.worldFootprint
+      : territoryFootprintFromBuilding(building);
+    if (footprint.length >= 3) obstacles.push(expandWorldPolygon(footprint, 0.06));
+  });
+  return obstacles;
+}
+
+function pointInTerritoryObstacle(point, obstacles) {
+  return obstacles.some((poly) => pointInPoly({ x: point.x, y: point.z }, poly));
+}
+
+function segmentHitsTerritoryObstacle(a, b, obstacles) {
+  const length = Math.max(0.001, Math.hypot(b.x - a.x, b.z - a.z));
+  const samples = Math.max(4, Math.ceil(length / 0.28));
+  for (let i = 1; i < samples; i += 1) {
+    const t = i / samples;
+    if (pointInTerritoryObstacle({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, obstacles)) return true;
+  }
+  return false;
+}
+
+function territoryPathIsClear(path, obstacles) {
+  for (let i = 0; i < path.length - 1; i += 1) {
+    if (segmentHitsTerritoryObstacle(path[i], path[i + 1], obstacles)) return false;
+  }
+  return true;
+}
+
+function simplifyTerritoryPath(path) {
+  const clean = (path || []).filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.z));
+  const out = [];
+  clean.forEach((point) => {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(point.x - last.x, point.z - last.z) > 0.035) out.push(point);
+  });
+  for (let i = out.length - 2; i > 0; i -= 1) {
+    const a = out[i - 1];
+    const b = out[i];
+    const c = out[i + 1];
+    if ((Math.abs(a.x - b.x) < 0.03 && Math.abs(b.x - c.x) < 0.03) || (Math.abs(a.z - b.z) < 0.03 && Math.abs(b.z - c.z) < 0.03)) {
+      out.splice(i, 1);
+    }
+  }
+  return out;
+}
+
+function territoryObstacleBounds(poly) {
+  const pts = (poly || []).map((p) => ({ x: p.x, y: p.y ?? p.z }));
+  return bounds(pts);
+}
+
+function territoryObstacleBox(poly) {
+  const b = territoryObstacleBounds(poly);
+  return { minX: b.minX, maxX: b.maxX, minZ: b.minY, maxZ: b.maxY };
+}
+
+function territoryRectsIntersect(a, b) {
+  return !(a.maxX < b.minX || a.minX > b.maxX || a.maxZ < b.minZ || a.minZ > b.maxZ);
+}
+
+function uniqueTerritoryCoords(values) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((value) => {
+    const last = out[out.length - 1];
+    if (!Number.isFinite(last) || Math.abs(value - last) > 0.08) out.push(value);
+  });
+  return out;
+}
+
+function firstSegmentTerritoryObstacle(a, b, obstacles) {
+  const length = Math.max(0.001, Math.hypot(b.x - a.x, b.z - a.z));
+  const samples = Math.max(6, Math.ceil(length / 0.16));
+  for (let i = 1; i < samples; i += 1) {
+    const t = i / samples;
+    const point = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    for (let j = 0; j < obstacles.length; j += 1) {
+      if (pointInPoly({ x: point.x, y: point.z }, obstacles[j])) {
+        return { poly: obstacles[j], box: territoryObstacleBox(obstacles[j]) };
+      }
+    }
+  }
+  return null;
+}
+
+function territoryPathLength(path) {
+  return (path || []).reduce((sum, p, i) => i ? sum + Math.hypot(p.x - path[i - 1].x, p.z - path[i - 1].z) : 0, 0);
+}
+
+function expandTerritoryDetours(path, obstacles, depth = 0) {
+  const clean = simplifyTerritoryPath(path || []);
+  if (clean.length < 2) return clean;
+  if (depth > 26) return clean;
+  const out = [clean[0]];
+  for (let i = 0; i < clean.length - 1; i += 1) {
+    const segment = territorySegmentDetour(clean[i], clean[i + 1], obstacles, depth);
+    segment.slice(1).forEach((p) => out.push(p));
+  }
+  return simplifyTerritoryPath(out);
+}
+
+function territorySegmentDetour(a, b, obstacles, depth = 0) {
+  const blocker = firstSegmentTerritoryObstacle(a, b, obstacles);
+  if (!blocker) return [a, b];
+  if (depth > 26) return [a, b];
+  const margin = 0.42;
+  const mostlyVertical = Math.abs(a.z - b.z) >= Math.abs(a.x - b.x);
+  const candidates = mostlyVertical
+    ? [
+        [{ x: blocker.box.minX - margin, z: a.z }, { x: blocker.box.minX - margin, z: b.z }],
+        [{ x: blocker.box.maxX + margin, z: a.z }, { x: blocker.box.maxX + margin, z: b.z }],
+      ]
+    : [
+        [{ x: a.x, z: blocker.box.minZ - margin }, { x: b.x, z: blocker.box.minZ - margin }],
+        [{ x: a.x, z: blocker.box.maxZ + margin }, { x: b.x, z: blocker.box.maxZ + margin }],
+      ];
+  const expanded = candidates
+    .map((candidate) => expandTerritoryDetours([a, candidate[0], candidate[1], b], obstacles, depth + 1))
+    .filter((candidate) => candidate.length >= 2);
+  if (!expanded.length) return [a, b];
+  expanded.sort((one, two) => {
+    const oneBlocked = territoryPathIsClear(one, obstacles) ? 0 : 1;
+    const twoBlocked = territoryPathIsClear(two, obstacles) ? 0 : 1;
+    if (oneBlocked !== twoBlocked) return oneBlocked - twoBlocked;
+    return territoryPathLength(one) - territoryPathLength(two);
+  });
+  return expanded[0];
+}
+
+function orthogonalTerritoryRoute(start, end, obstacles) {
+  const obstacleData = (obstacles || []).map((poly) => ({ poly, box: territoryObstacleBounds(poly) }));
+  if (!obstacleData.length) return [start, end];
+  const relevant = obstacleData;
+  const relevantPolys = relevant.map((item) => item.poly);
+  const margin = 0.36;
+  const xs = [start.x, end.x];
+  const zs = [start.z, end.z];
+  relevant.forEach(({ box }) => {
+    xs.push(box.minX - margin, box.maxX + margin);
+    zs.push(box.minY - margin, box.maxY + margin);
+  });
+  const xCoords = uniqueTerritoryCoords(xs);
+  const zCoords = uniqueTerritoryCoords(zs);
+  if (xCoords.length * zCoords.length > 180000) return null;
+  const cols = xCoords.length;
+  const rows = zCoords.length;
+  const index = (x, z) => z * cols + x;
+  const node = (key) => ({ x: xCoords[key % cols], z: zCoords[Math.floor(key / cols)] });
+  const nearestCoord = (coords, value) => coords.reduce((best, coord, i) => (
+    Math.abs(coord - value) < Math.abs(coords[best] - value) ? i : best
+  ), 0);
+  const source = index(nearestCoord(xCoords, start.x), nearestCoord(zCoords, start.z));
+  const target = index(nearestCoord(xCoords, end.x), nearestCoord(zCoords, end.z));
+  const blocked = new Uint8Array(cols * rows);
+  for (let z = 0; z < rows; z += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (pointInTerritoryObstacle({ x: xCoords[x], z: zCoords[z] }, relevantPolys)) blocked[index(x, z)] = 1;
+    }
+  }
+  blocked[source] = 0;
+  blocked[target] = 0;
+  const open = [source];
+  const inOpen = new Set(open);
+  const came = new Int32Array(cols * rows);
+  came.fill(-1);
+  const g = new Float64Array(cols * rows);
+  g.fill(Infinity);
+  g[source] = 0;
+  let guard = cols * rows * 3;
+  while (open.length && guard-- > 0) {
+    let bestAt = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i < open.length; i += 1) {
+      const key = open[i];
+      const p = node(key);
+      const score = g[key] + Math.abs(end.x - p.x) + Math.abs(end.z - p.z);
+      if (score < bestScore) { bestScore = score; bestAt = i; }
+    }
+    const current = open.splice(bestAt, 1)[0];
+    inOpen.delete(current);
+    if (current === target) {
+      const cells = [];
+      for (let key = current; key !== -1; key = came[key]) cells.push(node(key));
+      cells.reverse();
+      return simplifyTerritoryPath(cells);
+    }
+    const cx = current % cols;
+    const cz = Math.floor(current / cols);
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dz]) => {
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) return;
+      const next = index(nx, nz);
+      if (blocked[next]) return;
+      const a = node(current);
+      const b = node(next);
+      if (segmentHitsTerritoryObstacle(a, b, relevantPolys)) return;
+      const tentative = g[current] + Math.hypot(b.x - a.x, b.z - a.z);
+      if (tentative >= g[next]) return;
+      came[next] = current;
+      g[next] = tentative;
+      if (!inOpen.has(next)) { open.push(next); inOpen.add(next); }
+    });
+  }
+  return null;
+}
+
+function gridTerritoryRoute(start, end, obstacles) {
+  const obstaclePoints = obstacles.flat();
+  const all = obstaclePoints.concat([start, end]);
+  if (!all.length) return [start, end];
+  const step = 1.65;
+  const minX = Math.floor((Math.min(...all.map((p) => p.x)) - 2.2) / step) * step;
+  const maxX = Math.ceil((Math.max(...all.map((p) => p.x)) + 2.2) / step) * step;
+  const minZ = Math.floor((Math.min(...all.map((p) => p.y ?? p.z)) - 2.2) / step) * step;
+  const maxZ = Math.ceil((Math.max(...all.map((p) => p.y ?? p.z)) + 2.2) / step) * step;
+  const cols = Math.max(2, Math.round((maxX - minX) / step) + 1);
+  const rows = Math.max(2, Math.round((maxZ - minZ) / step) + 1);
+  const index = (x, z) => z * cols + x;
+  const inBounds = (x, z) => x >= 0 && z >= 0 && x < cols && z < rows;
+  const blocked = new Uint8Array(cols * rows);
+  for (let z = 0; z < rows; z += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const point = { x: minX + x * step, z: minZ + z * step };
+      if (pointInTerritoryObstacle(point, obstacles)) blocked[index(x, z)] = 1;
+    }
+  }
+  function nearestOpen(point) {
+    const gx = clampTerritory(Math.round((point.x - minX) / step), 0, cols - 1);
+    const gz = clampTerritory(Math.round((point.z - minZ) / step), 0, rows - 1);
+    for (let radius = 0; radius < Math.max(cols, rows); radius += 1) {
+      let best = null;
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const x = gx + dx;
+          const z = gz + dz;
+          if (!inBounds(x, z) || blocked[index(x, z)]) continue;
+          const world = { x: minX + x * step, z: minZ + z * step };
+          const distance = Math.hypot(world.x - point.x, world.z - point.z);
+          if (!best || distance < best.distance) best = { x, z, distance };
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+  const source = nearestOpen(start);
+  const target = nearestOpen(end);
+  if (!source || !target) return [start, end];
+  const sourceKey = index(source.x, source.z);
+  const targetKey = index(target.x, target.z);
+  const open = [sourceKey];
+  const inOpen = new Set(open);
+  const came = new Int32Array(cols * rows);
+  came.fill(-1);
+  const g = new Float64Array(cols * rows);
+  g.fill(Infinity);
+  g[sourceKey] = 0;
+  const moves = [
+    [target.x >= source.x ? 1 : -1, 0],
+    [0, target.z >= source.z ? 1 : -1],
+    [target.x >= source.x ? -1 : 1, 0],
+    [0, target.z >= source.z ? -1 : 1],
+  ];
+  let guard = cols * rows * 2;
+  while (open.length && guard-- > 0) {
+    let bestAt = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i < open.length; i += 1) {
+      const key = open[i];
+      const x = key % cols;
+      const z = Math.floor(key / cols);
+      const score = g[key] + Math.abs(target.x - x) + Math.abs(target.z - z);
+      if (score < bestScore) { bestScore = score; bestAt = i; }
+    }
+    const current = open.splice(bestAt, 1)[0];
+    inOpen.delete(current);
+    if (current === targetKey) {
+      const cells = [];
+      for (let key = current; key !== -1; key = came[key]) cells.push({ x: key % cols, z: Math.floor(key / cols) });
+      cells.reverse();
+      return simplifyTerritoryPath([start]
+        .concat(cells.map((cell) => ({ x: minX + cell.x * step, z: minZ + cell.z * step })))
+        .concat([end]));
+    }
+    const cx = current % cols;
+    const cz = Math.floor(current / cols);
+    moves.forEach(([dx, dz]) => {
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (!inBounds(nx, nz) || blocked[index(nx, nz)]) return;
+      const next = index(nx, nz);
+      const tentative = g[current] + 1;
+      if (tentative >= g[next]) return;
+      came[next] = current;
+      g[next] = tentative;
+      if (!inOpen.has(next)) { open.push(next); inOpen.add(next); }
+    });
+  }
+  return [start, end];
+}
+
+function blockyTerritoryRoute(start, end, obstacles) {
+  const cornerA = { x: start.x, z: end.z };
+  const cornerB = { x: end.x, z: start.z };
+  const candidates = [
+    simplifyTerritoryPath([start, cornerA, end]),
+    simplifyTerritoryPath([start, cornerB, end]),
+  ].map((path) => expandTerritoryDetours(path, obstacles)).filter((path) => path.length >= 2);
+  if (candidates.length) {
+    candidates.sort((a, b) => {
+      const aBlocked = territoryPathIsClear(a, obstacles) ? 0 : 1;
+      const bBlocked = territoryPathIsClear(b, obstacles) ? 0 : 1;
+      if (aBlocked !== bBlocked) return aBlocked - bBlocked;
+      return territoryPathLength(a) - territoryPathLength(b);
+    });
+    return candidates[0];
+  }
+  const orthogonal = orthogonalTerritoryRoute(start, end, obstacles);
+  if (orthogonal && orthogonal.length >= 2) return orthogonal;
+  return gridTerritoryRoute(start, end, obstacles);
+}
+
+function normalizedTerritoryEdgeKey(a, b) {
+  const pointKey = (p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`;
+  return `${pointKey(a)}|${pointKey(b)}`;
+}
+
+function territoryRectFromBlock(block) {
+  if (!block?.polygon || block.polygon.length < 3) return null;
+  const b = block.rect || bounds(block.polygon);
+  const rect = {
+    id: block.id,
+    minX: Math.min(Number(b.minX), Number(b.maxX)),
+    maxX: Math.max(Number(b.minX), Number(b.maxX)),
+    minY: Math.min(Number(b.minY), Number(b.maxY)),
+    maxY: Math.max(Number(b.minY), Number(b.maxY)),
+    kind: 'block',
+  };
+  if (![rect.minX, rect.maxX, rect.minY, rect.maxY].every(Number.isFinite)) return null;
+  if (rect.maxX - rect.minX < 0.5 || rect.maxY - rect.minY < 0.5) return null;
+  return rect;
+}
+
+function territoryRectPoly(rect) {
+  return [
+    { x: rect.minX, y: rect.minY },
+    { x: rect.maxX, y: rect.minY },
+    { x: rect.maxX, y: rect.maxY },
+    { x: rect.minX, y: rect.maxY },
+  ];
+}
+
+function overlapRange(aMin, aMax, bMin, bMax, minSize = 4) {
+  const min = Math.max(aMin, bMin);
+  const max = Math.min(aMax, bMax);
+  return max - min >= minSize ? { min, max } : null;
+}
+
+function territoryConnectorRects(rects) {
+  const connectors = [];
+  const allRects = rects.slice();
+  const seen = new Set();
+  const maxGap = 74;
+  const minOverlap = 4;
+  const rectKey = (rect) => [
+    Math.round(rect.minX * 10) / 10,
+    Math.round(rect.maxX * 10) / 10,
+    Math.round(rect.minY * 10) / 10,
+    Math.round(rect.maxY * 10) / 10,
+  ].join(':');
+  const addConnector = (rect) => {
+    if (rect.maxX - rect.minX < 0.5 || rect.maxY - rect.minY < 0.5) return;
+    const key = rectKey(rect);
+    if (seen.has(key)) return;
+    seen.add(key);
+    connectors.push(rect);
+    allRects.push(rect);
+  };
+  for (let pass = 0; pass < 4; pass += 1) {
+    const startCount = allRects.length;
+    const passRects = allRects.slice();
+    for (let i = 0; i < passRects.length; i += 1) {
+      for (let j = i + 1; j < passRects.length; j += 1) {
+        const a = passRects[i];
+        const b = passRects[j];
+      const yOverlap = overlapRange(a.minY, a.maxY, b.minY, b.maxY, minOverlap);
+      const xOverlap = overlapRange(a.minX, a.maxX, b.minX, b.maxX, minOverlap);
+      const horizontalGap = a.maxX <= b.minX ? b.minX - a.maxX : b.maxX <= a.minX ? a.minX - b.maxX : -1;
+      if (yOverlap && horizontalGap >= 0 && horizontalGap <= maxGap) {
+        const left = a.maxX <= b.minX ? a : b;
+        const right = left === a ? b : a;
+        addConnector({
+          id: `connector-${left.id}-${right.id}`,
+          minX: left.maxX,
+          maxX: right.minX,
+          minY: yOverlap.min,
+          maxY: yOverlap.max,
+          kind: 'connector',
+        });
+      }
+      const verticalGap = a.maxY <= b.minY ? b.minY - a.maxY : b.maxY <= a.minY ? a.minY - b.maxY : -1;
+      if (xOverlap && verticalGap >= 0 && verticalGap <= maxGap) {
+        const top = a.maxY <= b.minY ? a : b;
+        const bottom = top === a ? b : a;
+        addConnector({
+          id: `connector-${top.id}-${bottom.id}`,
+          minX: xOverlap.min,
+          maxX: xOverlap.max,
+          minY: top.maxY,
+          maxY: bottom.minY,
+          kind: 'connector',
+        });
+      }
+    }
+    }
+    if (allRects.length === startCount) break;
+  }
+  return connectors;
+}
+
+function territoryRectContains(rect, x, y) {
+  return x > rect.minX + 0.001 && x < rect.maxX - 0.001 && y > rect.minY + 0.001 && y < rect.maxY - 0.001;
+}
+
+function territoryUnionEdges(rects) {
+  if (!rects.length) return [];
+  const xs = uniqueTerritoryCoords(rects.flatMap((rect) => [rect.minX, rect.maxX]));
+  const ys = uniqueTerritoryCoords(rects.flatMap((rect) => [rect.minY, rect.maxY]));
+  if (xs.length < 2 || ys.length < 2) return [];
+  const cols = xs.length - 1;
+  const rows = ys.length - 1;
+  const cell = (x, y) => y * cols + x;
+  const filled = new Uint8Array(cols * rows);
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const cx = (xs[x] + xs[x + 1]) * 0.5;
+      const cy = (ys[y] + ys[y + 1]) * 0.5;
+      if (rects.some((rect) => territoryRectContains(rect, cx, cy))) filled[cell(x, y)] = 1;
+    }
+  }
+  const isFilled = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && filled[cell(x, y)];
+  const edges = [];
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (!filled[cell(x, y)]) continue;
+      if (!isFilled(x, y - 1)) edges.push({ a: { x: xs[x], y: ys[y] }, b: { x: xs[x + 1], y: ys[y] } });
+      if (!isFilled(x + 1, y)) edges.push({ a: { x: xs[x + 1], y: ys[y] }, b: { x: xs[x + 1], y: ys[y + 1] } });
+      if (!isFilled(x, y + 1)) edges.push({ a: { x: xs[x + 1], y: ys[y + 1] }, b: { x: xs[x], y: ys[y + 1] } });
+      if (!isFilled(x - 1, y)) edges.push({ a: { x: xs[x], y: ys[y + 1] }, b: { x: xs[x], y: ys[y] } });
+    }
+  }
+  return mergeTerritoryUnionEdges(edges);
+}
+
+function mergeTerritoryUnionEdges(edges) {
+  const eps = 0.08;
+  const coordKey = (value) => String(Math.round(value * 10) / 10);
+  const horizontal = new Map();
+  const vertical = new Map();
+  edges.forEach((edge) => {
+    if (Math.abs(edge.a.y - edge.b.y) < eps) {
+      const key = coordKey(edge.a.y);
+      if (!horizontal.has(key)) horizontal.set(key, []);
+      horizontal.get(key).push({ from: Math.min(edge.a.x, edge.b.x), to: Math.max(edge.a.x, edge.b.x), y: edge.a.y });
+      return;
+    }
+    if (Math.abs(edge.a.x - edge.b.x) < eps) {
+      const key = coordKey(edge.a.x);
+      if (!vertical.has(key)) vertical.set(key, []);
+      vertical.get(key).push({ from: Math.min(edge.a.y, edge.b.y), to: Math.max(edge.a.y, edge.b.y), x: edge.a.x });
+    }
+  });
+  const merged = [];
+  horizontal.forEach((items) => {
+    items.sort((a, b) => a.from - b.from);
+    let active = null;
+    items.forEach((item) => {
+      if (!active || item.from > active.to + eps) {
+        if (active) merged.push({ a: { x: active.from, y: active.y }, b: { x: active.to, y: active.y } });
+        active = { ...item };
+      } else active.to = Math.max(active.to, item.to);
+    });
+    if (active) merged.push({ a: { x: active.from, y: active.y }, b: { x: active.to, y: active.y } });
+  });
+  vertical.forEach((items) => {
+    items.sort((a, b) => a.from - b.from);
+    let active = null;
+    items.forEach((item) => {
+      if (!active || item.from > active.to + eps) {
+        if (active) merged.push({ a: { x: active.x, y: active.from }, b: { x: active.x, y: active.to } });
+        active = { ...item };
+      } else active.to = Math.max(active.to, item.to);
+    });
+    if (active) merged.push({ a: { x: active.x, y: active.from }, b: { x: active.x, y: active.to } });
+  });
+  return merged;
+}
+
+function blockContainsMafiaParcel(block) {
+  return (block?.parcels || []).some((parcel) => !!(
+    parcel?.mafiaControlled ||
+    parcel?.mafiaProtected ||
+    parcel?.isFamilyEstate ||
+    String(parcel?.subtype || '').toLowerCase() === 'family estate'
+  ));
+}
+
+function blockAtSourcePoint(blocks, point) {
+  if (!point) return null;
+  return (blocks || []).find((block) => pointInPoly(point, block.polygon || [])) || null;
+}
+
+function controlledTerritoryBlockIds(blocks, suppliedIds, buildingMap = null, center = { x: 0, y: 0 }, scale = WORLD_SCALE) {
+  const ids = new Set((suppliedIds || []).filter(Boolean));
+  const blockIds = new Set((blocks || []).map((block) => block.id));
+  (blocks || []).forEach((block) => {
+    if (ids.has(block.id)) return;
+    if (blockContainsMafiaParcel(block)) ids.add(block.id);
+  });
+  buildingMap?.forEach((building) => {
+    const parcel = building?.parcel || {};
+    const controlled = parcel.mafiaControlled || parcel.mafiaProtected || parcel.isFamilyEstate || String(parcel.subtype || '').toLowerCase() === 'family estate';
+    if (!controlled) return;
+    if (parcel.blockId && blockIds.has(parcel.blockId)) {
+      ids.add(parcel.blockId);
+      return;
+    }
+    const source = sourcePoint({ x: building.center?.x || 0, y: building.center?.y || 0 }, center, scale);
+    const block = blockAtSourcePoint(blocks, source);
+    if (block?.id) ids.add(block.id);
+  });
+  return ids;
+}
+
+function buildMergedMafiaTerritoryOverlay(blocks, controlledBlockIds, color, center, scale, buildingMap = null) {
+  const controlled = controlledTerritoryBlockIds(blocks, controlledBlockIds, buildingMap, center, scale);
+  if (!controlled.size) return null;
+  const blockRects = (blocks || [])
+    .filter((block) => controlled.has(block.id))
+    .map(territoryRectFromBlock)
+    .filter(Boolean);
+  if (!blockRects.length) return null;
+  const connectorRects = territoryConnectorRects(blockRects);
+  const territoryRects = blockRects.concat(connectorRects);
+  const edges = territoryUnionEdges(territoryRects);
+  if (!edges.length) return null;
+  const outline = new THREE.Group();
+  outline.userData.mergedMafiaTerritory = true;
+  outline.renderOrder = 118;
+  const base = new THREE.Color(color || '#ff1d1d');
+  const wash = new THREE.MeshBasicMaterial({ color: base, transparent: true, opacity: 0.095, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+  const glow = new THREE.MeshBasicMaterial({ color: base, transparent: true, opacity: 0.42, depthWrite: false, depthTest: false });
+  const core = new THREE.MeshBasicMaterial({ color: base, transparent: true, opacity: 0.98, depthWrite: false, depthTest: false });
+  territoryRects.forEach((rect) => {
+    const fillGeometry = new THREE.ShapeGeometry(shapeFromPoly(territoryRectPoly(rect), center, scale));
+    fillGeometry.rotateX(-Math.PI / 2);
+    const fill = new THREE.Mesh(fillGeometry, wash);
+    fill.position.y = 0.31;
+    fill.renderOrder = 118;
+    outline.add(fill);
+  });
+  edges.forEach(({ a, b }) => {
+    const aw = worldPoint(a, center, scale);
+    const bw = worldPoint(b, center, scale);
+    if (Math.hypot(bw.x - aw.x, bw.y - aw.y) < 0.05) return;
+    addTerritoryEdgeBar(outline, { x: aw.x, y: aw.y }, { x: bw.x, y: bw.y }, glow, 0.46, 0.46, 120, 0.16);
+    addTerritoryEdgeBar(outline, { x: aw.x, y: aw.y }, { x: bw.x, y: bw.y }, core, 0.14, 0.55, 121, 0.22);
+  });
+  return outline.children.length ? outline : null;
+}
+
+function refreshMergedMafiaTerritoryOverlay(entry) {
+  if (!entry?.scene || !entry?.buildingMap) return;
+  if (entry.territoryGroup) {
+    entry.scene.remove(entry.territoryGroup);
+    entry.territoryGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach((mat) => mat.dispose?.());
+        else obj.material.dispose?.();
+      }
+    });
+    entry.territoryGroup = null;
+  }
+  const generated = entry.generated || entry.root?._deskDonGenerated || {};
+  entry.territoryGroup = buildMergedMafiaTerritoryOverlay(
+    generated.blocks || [],
+    entry.root?._deskDonPayload?.mafiaTerritoryBlocks || [],
+    entry.root?._deskDonPayload?.mafiaColor || '#ff1d1d',
+    entry.center || { x: 0, y: 0 },
+    entry.scale || WORLD_SCALE,
+    entry.buildingMap
+  );
+  if (entry.territoryGroup) entry.scene.add(entry.territoryGroup);
+}
+
 function playerPawnTexture(pawn) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -2044,6 +3201,7 @@ function nearestPointOnRoad2d(p, a, b) {
 }
 
 function buildPawnRoadNav(roads, center, scale, blocks = []) {
+  const gridMode = (blocks || []).some((block) => block?.grid);
   const perimeterSegments = [];
   const seen = new Set();
   const blockWorldPolys = (blocks || []).map((block) => (block?.polygon || []).map((point) => {
@@ -2066,16 +3224,71 @@ function buildPawnRoadNav(roads, center, scale, blocks = []) {
       perimeterSegments.push({ id: `block-edge-${block.id || perimeterSegments.length}-${i}`, a, b, cuts: [], costFactor: 1 });
     }
   });
-  const roadSegments = (roads || []).filter((road) => road?.a && road?.b).map((road) => {
-    const a = worldPoint(road.a, center, scale);
-    const b = worldPoint(road.b, center, scale);
-    const samples = [0.2, 0.4, 0.6, 0.8];
-    const hidden = samples.some((t) => blockWorldPolys.some((poly) => pointInPoly({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, poly)));
-    return { id: road.id, a: { x: a.x, z: a.y }, b: { x: b.x, z: b.y }, cuts: [], costFactor: hidden ? 30 : 1.15 };
-  }).filter((seg) => Math.hypot(seg.b.x - seg.a.x, seg.b.z - seg.a.z) > 0.2);
-  // Perimeters provide the visible sidewalk network; raw roads keep irregular
-  // districts connected, but buried portions receive a prohibitive route cost.
-  const segments = perimeterSegments.length ? perimeterSegments.concat(roadSegments) : roadSegments;
+  let segments;
+  if (gridMode) {
+    const roadSegments = (roads || []).filter((road) => road?.a && road?.b).map((road) => {
+      const aWorld = worldPoint(road.a, center, scale);
+      const bWorld = worldPoint(road.b, center, scale);
+      const a = { x: aWorld.x, z: aWorld.y };
+      const b = { x: bWorld.x, z: bWorld.y };
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.max(0.001, Math.hypot(dx, dz));
+      const nx = -dz / len;
+      const nz = dx / len;
+      const offset = ((road.width || 12) * 0.5 + gridRoadSideClearance(road.width || 12)) * 0.5 * scale;
+      return { road, a, b, nx, nz, offset, length: len };
+    }).filter((seg) => seg.length > 0.2);
+    const sidewalkSegments = [];
+    roadSegments.forEach((seg) => {
+      [-1, 1].forEach((side) => {
+        sidewalkSegments.push({
+          id: `sidewalk-${seg.road.id}-${side}`,
+          a: { x: seg.a.x + seg.nx * seg.offset * side, z: seg.a.z + seg.nz * seg.offset * side },
+          b: { x: seg.b.x + seg.nx * seg.offset * side, z: seg.b.z + seg.nz * seg.offset * side },
+          cuts: [],
+          costFactor: 1,
+          sidewalk: true,
+        });
+      });
+    });
+    const crosswalks = [];
+    const crossKeys = new Set();
+    function addCrosswalk(a, b, id) {
+      if (Math.hypot(b.x - a.x, b.z - a.z) < 0.08) return;
+      const key = `${Math.round(a.x * 100) / 100},${Math.round(a.z * 100) / 100}:${Math.round(b.x * 100) / 100},${Math.round(b.z * 100) / 100}`;
+      const reverse = `${key.split(':')[1]}:${key.split(':')[0]}`;
+      if (crossKeys.has(key) || crossKeys.has(reverse)) return;
+      crossKeys.add(key);
+      crosswalks.push({ id, a, b, cuts: [], costFactor: 1.18, crosswalk: true });
+    }
+    for (let i = 0; i < roadSegments.length; i += 1) {
+      for (let j = i + 1; j < roadSegments.length; j += 1) {
+        const hit = lineIntersection2d(roadSegments[i].a, roadSegments[i].b, roadSegments[j].a, roadSegments[j].b);
+        if (!hit) continue;
+        const p = { x: hit.x, z: hit.z };
+        [roadSegments[i], roadSegments[j]].forEach((seg) => {
+          addCrosswalk(
+            { x: p.x + seg.nx * seg.offset, z: p.z + seg.nz * seg.offset },
+            { x: p.x - seg.nx * seg.offset, z: p.z - seg.nz * seg.offset },
+            `crosswalk-${seg.road.id}-${Math.round(p.x * 10)}-${Math.round(p.z * 10)}`,
+          );
+        });
+      }
+    }
+    segments = sidewalkSegments.concat(crosswalks);
+  } else {
+    const roadSegments = (roads || []).filter((road) => road?.a && road?.b).map((road) => {
+      const a = worldPoint(road.a, center, scale);
+      const b = worldPoint(road.b, center, scale);
+      const samples = [0.2, 0.4, 0.6, 0.8];
+      const hidden = samples.some((t) => blockWorldPolys.some((poly) => pointInPoly({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, poly)));
+      return { id: road.id, a: { x: a.x, z: a.y }, b: { x: b.x, z: b.y }, cuts: [], costFactor: hidden ? 30 : 1.15 };
+    }).filter((seg) => Math.hypot(seg.b.x - seg.a.x, seg.b.z - seg.a.z) > 0.2);
+    // Perimeters provide the visible sidewalk network; raw roads keep irregular
+    // districts connected, but buried portions receive a prohibitive route cost.
+    segments = perimeterSegments.length ? perimeterSegments.concat(roadSegments) : roadSegments;
+  }
   const nodes = [];
   const nodeKeys = new Map();
   const edges = [];
@@ -2113,7 +3326,7 @@ function buildPawnRoadNav(roads, center, scale, blocks = []) {
       nodes[to].edges.push(id);
     }
   });
-  return { segments, nodes, edges, blockPolys: blockWorldPolys, routeCache: new Map(), streetGrid: null };
+  return { segments, nodes, edges, blockPolys: blockWorldPolys, routeCache: new Map(), streetGrid: null, sidewalkOnly: gridMode };
 }
 
 function streetGridPath(nav, start, end) {
@@ -2218,10 +3431,12 @@ function shortestPawnRoadPath(nav, start, end) {
   if (!nav || !nav.nodes.length || !nav.segments.length) return [start, end];
   const cacheKey = `${start.x.toFixed(2)},${start.z.toFixed(2)}:${end.x.toFixed(2)},${end.z.toFixed(2)}`;
   if (nav.routeCache.has(cacheKey)) return nav.routeCache.get(cacheKey);
-  const streetPath = streetGridPath(nav, start, end);
-  if (streetPath?.length > 1) {
-    nav.routeCache.set(cacheKey, streetPath);
-    return streetPath;
+  if (!nav.sidewalkOnly) {
+    const streetPath = streetGridPath(nav, start, end);
+    if (streetPath?.length > 1) {
+      nav.routeCache.set(cacheKey, streetPath);
+      return streetPath;
+    }
   }
   function anchor(p) {
     let best = null;
@@ -2358,20 +3573,81 @@ function routePointForBuilding(building, nav) {
   const candidates = [];
   world.forEach((p, index) => {
     const next = world[(index + 1) % world.length];
-    candidates.push({ x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 });
+    candidates.push({ x: (p.x + next.x) / 2, y: (p.y + next.y) / 2, edgeIndex: index });
   });
   if (!candidates.length) return building.center || null;
   let best = candidates[0];
   let bestDistance = Infinity;
+  const segments = nav?.segments || [];
   const nodes = nav?.nodes || [];
   candidates.forEach((candidate) => {
     let distance = Infinity;
-    nodes.forEach((node) => { distance = Math.min(distance, Math.hypot(candidate.x - node.x, candidate.y - node.z)); });
+    segments.forEach((seg) => {
+      const near = nearestPointOnRoad2d({ x: candidate.x, z: candidate.y }, seg.a, seg.b);
+      distance = Math.min(distance, near.distance);
+    });
+    if (!segments.length) nodes.forEach((node) => { distance = Math.min(distance, Math.hypot(candidate.x - node.x, candidate.y - node.z)); });
     if (!nodes.length && building.center) distance = Math.hypot(candidate.x - building.center.x, candidate.y - building.center.y);
     if (distance < bestDistance) { best = candidate; bestDistance = distance; }
   });
-  building.entryPoint = best;
-  return best;
+  building.entryPoint = { x: best.x, y: best.y };
+  building.exitPoint = building.entryPoint;
+  building.entryEdgeIndex = best.edgeIndex;
+  return building.entryPoint;
+}
+
+function ensureBuildingEntryPoints(buildingMap, nav) {
+  if (!buildingMap?.forEach) return;
+  buildingMap.forEach((building) => {
+    if (!building?.entryPoint) routePointForBuilding(building, nav);
+  });
+}
+
+function buildingCenterXZ(building) {
+  if (!building?.center) return null;
+  const z = Number.isFinite(building.center.z) ? building.center.z : building.center.y;
+  if (!Number.isFinite(building.center.x) || !Number.isFinite(z)) return null;
+  return { x: building.center.x, z };
+}
+
+function appendDistinctPathPoint(path, point) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return path;
+  const last = path[path.length - 1];
+  if (!last || Math.hypot(point.x - last.x, point.z - last.z) > 0.045) path.push(point);
+  return path;
+}
+
+function movementPathForBuildings(nav, fromBuilding, targetBuilding, fallbackStart, fallbackEnd) {
+  if (!targetBuilding || !fromBuilding) return fallbackStart ? [fallbackStart] : [];
+  const fromEntry = routePointForBuilding(fromBuilding, nav);
+  const targetEntry = routePointForBuilding(targetBuilding, nav);
+  const fromCenter = buildingCenterXZ(fromBuilding);
+  const targetCenter = buildingCenterXZ(targetBuilding);
+  const path = [];
+  const insideStart = fallbackStart || fromCenter;
+  const sidewalkStart = fromEntry ? { x: fromEntry.x, z: fromEntry.y } : insideStart;
+  const sidewalkEnd = targetEntry ? { x: targetEntry.x, z: targetEntry.y } : (fallbackEnd || targetCenter);
+  if (insideStart) appendDistinctPathPoint(path, insideStart);
+  if (fromEntry) appendDistinctPathPoint(path, { x: fromEntry.x, z: fromEntry.y });
+  const sidewalk = sidewalkStart && sidewalkEnd ? shortestPawnRoadPath(nav, sidewalkStart, sidewalkEnd) : [];
+  sidewalk.forEach((point) => appendDistinctPathPoint(path, point));
+  if (targetEntry) appendDistinctPathPoint(path, { x: targetEntry.x, z: targetEntry.y });
+  if (targetCenter) appendDistinctPathPoint(path, targetCenter);
+  return path.length ? path : [fallbackStart || fallbackEnd || { x: 0, z: 0 }];
+}
+
+function movementPathFromPointToBuilding(nav, startPoint, targetBuilding, fallbackEnd) {
+  if (!startPoint || !targetBuilding) return fallbackEnd ? [fallbackEnd] : [];
+  const targetEntry = routePointForBuilding(targetBuilding, nav);
+  const targetCenter = buildingCenterXZ(targetBuilding);
+  const sidewalkEnd = targetEntry ? { x: targetEntry.x, z: targetEntry.y } : (fallbackEnd || targetCenter);
+  const path = [];
+  appendDistinctPathPoint(path, startPoint);
+  const sidewalk = sidewalkEnd ? shortestPawnRoadPath(nav, startPoint, sidewalkEnd) : [];
+  sidewalk.forEach((point) => appendDistinctPathPoint(path, point));
+  if (targetEntry) appendDistinctPathPoint(path, { x: targetEntry.x, z: targetEntry.y });
+  if (targetCenter) appendDistinctPathPoint(path, targetCenter);
+  return path.length ? path : [startPoint];
 }
 
 function sidewalkPath(path, side = 1, amount = 0.23) {
@@ -2487,17 +3763,23 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
   const routeFrom = from || fallbackFrom;
   const routeFromPoint = routePointForBuilding(routeFrom, entry.roadNav) || routeFrom?.center;
   const targetPoint = routePointForBuilding(target, entry.roadNav) || target?.center || routeFromPoint;
+  const routeFromCenter = buildingCenterXZ(routeFrom);
+  const targetCenter = buildingCenterXZ(target);
   const a = routeFromPoint || targetPoint;
   const b = targetPoint || a;
   const logicalRouteKey = target && routeFrom ? `${pawn.parcelId || 'visual'}:${pawn.targetParcelId || ''}:${pawn.routeId || ''}` : '';
   if (logicalRouteKey && entry.playerPawn.userData.logicalRouteKey !== logicalRouteKey) {
+    const previousRouteKey = entry.playerPawn.userData.logicalRouteKey || '';
+    const reroutingFromLivePosition = !!(previousRouteKey && hasLastPosition && target);
     entry.playerPawn.userData.logicalRouteKey = logicalRouteKey;
-    entry.playerPawn.userData.routeStart = { x: a.x, z: a.y };
-    entry.playerPawn.userData.visualProgress = Math.max(0, Math.min(1, Number(pawn.progress ?? 0)));
+    entry.playerPawn.userData.routeStart = reroutingFromLivePosition ? { x: entry.playerPawn.position.x, z: entry.playerPawn.position.z } : (routeFromCenter || { x: a.x, z: a.y });
+    entry.playerPawn.userData.routeStartIsLive = reroutingFromLivePosition;
+    entry.playerPawn.userData.visualProgress = reroutingFromLivePosition ? 0 : Math.max(0, Math.min(1, Number(pawn.progress ?? 0)));
     entry.playerPawn.userData.progressUpdatedAt = performance.now();
   } else if (!logicalRouteKey) {
     entry.playerPawn.userData.logicalRouteKey = '';
     entry.playerPawn.userData.routeStart = null;
+    entry.playerPawn.userData.routeStartIsLive = false;
     entry.playerPawn.userData.visualProgress = null;
   }
   const logicalProgress = Math.max(0, Math.min(1, Number(pawn.progress ?? 1)));
@@ -2519,8 +3801,12 @@ function updatePlayerPawnObject(entry, pawn, buildingMap) {
     t = Number.isFinite(entry.playerPawn.userData.visualProgress) ? entry.playerPawn.userData.visualProgress : logicalProgress;
     entry.playerPawn.userData.progressUpdatedAt = performance.now();
   }
-  const startPoint = target && routeFrom && entry.playerPawn.userData.routeStart ? entry.playerPawn.userData.routeStart : { x: a.x, z: a.y };
-  const path = target && routeFrom ? shortestPawnRoadPath(entry.roadNav, startPoint, { x: b.x, z: b.y }) : [{ x: a.x, z: a.y }];
+  const startPoint = target && routeFrom && entry.playerPawn.userData.routeStart ? entry.playerPawn.userData.routeStart : (routeFromCenter || { x: a.x, z: a.y });
+  const path = target && routeFrom
+    ? (entry.playerPawn.userData.routeStartIsLive
+      ? movementPathFromPointToBuilding(entry.roadNav, startPoint, target, targetCenter || { x: b.x, z: b.y })
+      : movementPathForBuildings(entry.roadNav, routeFrom, target, startPoint, targetCenter || { x: b.x, z: b.y }))
+    : [routeFromCenter || { x: a.x, z: a.y }];
   if (logicalRouteKey && entry.playerPawn.userData.reportedRouteKey !== logicalRouteKey) {
     let routeDistance = 0;
     for (let i = 0; i < path.length - 1; i += 1) routeDistance += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
@@ -2707,6 +3993,44 @@ function protectedColorForParcel(parcel, fallback) {
   return fallback;
 }
 
+function isInactiveParcel(parcel) {
+  return normalizeOperationalState(parcel?.operationalState || parcel?.status) === 'Inactive' || parcel?.isActive === false || parcel?.isInactive === true;
+}
+
+function inactiveColor(hex, fallback = 0x2f2b24) {
+  if (hex === undefined || hex === null) return fallback;
+  const c = new THREE.Color(hex);
+  c.multiplyScalar(0.34);
+  return c.getHex();
+}
+
+function applyBuildingOperationalVisual(building, record) {
+  if (!building) return;
+  const state = normalizeOperationalState(record || building.parcel?.operationalState || building.parcel?.status);
+  const inactive = state === 'Inactive';
+  if (building.parcel) {
+    building.parcel.operationalState = state;
+    building.parcel.isActive = !inactive;
+    building.parcel.isInactive = inactive;
+  }
+  const wallActive = building.mesh?.userData?.activeColor ?? building.mesh?.userData?.originalColor ?? 0x888888;
+  const roofActive = building.roofMesh?.userData?.activeColor ?? building.roofMesh?.userData?.originalColor ?? wallActive;
+  [
+    { mesh: building.mesh, active: wallActive },
+    { mesh: building.roofMesh, active: roofActive },
+  ].forEach((item) => {
+    if (!item.mesh?.material) return;
+    const next = inactive ? inactiveColor(item.active) : item.active;
+    item.mesh.userData.originalColor = next;
+    const mats = Array.isArray(item.mesh.material) ? item.mesh.material : [item.mesh.material];
+    mats.forEach((mat) => {
+      if (mat.color) mat.color.setHex(next);
+      if (mat.emissive) mat.emissive.setHex(inactive ? 0x000000 : (building.parcel?.isPlayerSafehouse ? 0x071406 : 0x000000));
+      mat.needsUpdate = true;
+    });
+  });
+}
+
 function buildingForParcel(parcel, center, scale, materials, rayTargets, buildingMap, debug) {
   const footprint = parcel.buildingPolygon || (debug.exactExtrusion ? null : parcel.polygon);
   if (!parcel.isBuildable || !footprint || footprint.length < 3) return null;
@@ -2717,7 +4041,9 @@ function buildingForParcel(parcel, center, scale, materials, rayTargets, buildin
     if (!heightSanityOk(height, metrics, parcel)) return null;
     const palette = colorByCategory[parcel.category] || colorByCategory.Commercial;
     const safehouseColor = parcel.isPlayerSafehouse ? 0x36682c : protectedColorForParcel(parcel, palette.wall);
+    const inactive = isInactiveParcel(parcel);
     const wall = new THREE.MeshPhongMaterial({ color: safehouseColor, emissive: parcel.isPlayerSafehouse ? 0x071406 : 0x000000, shininess: 10, flatShading: true, side: THREE.DoubleSide });
+    if (inactive) wall.color.setHex(inactiveColor(safehouseColor));
     const geo = new THREE.ExtrudeGeometry(extrusionShapeFromPoly(footprint, center, scale), {
       depth: height,
       bevelEnabled: false,
@@ -2728,16 +4054,33 @@ function buildingForParcel(parcel, center, scale, materials, rayTargets, buildin
     const mesh = new THREE.Mesh(geo, wall);
     mesh.position.y = 0.045;
     mesh.userData.parcel = parcel;
-    mesh.userData.originalColor = safehouseColor;
+    mesh.userData.activeColor = safehouseColor;
+    mesh.userData.originalColor = inactive ? inactiveColor(safehouseColor) : safehouseColor;
     const group = new THREE.Group();
     group.add(mesh);
-    const edge = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({ color: debug.exactExtrusion ? 0xf2d68a : 0x2a2419, transparent: true, opacity: debug.exactExtrusion ? 0.78 : 0.35 }),
-    );
-    edge.position.copy(mesh.position);
-    edge.userData.detailLine = true;
-    group.add(edge);
+    if (debug.gridCityView) {
+      const topPoints = footprint.map((source) => {
+        const p = worldPoint(source, center, scale);
+        return new THREE.Vector3(p.x, height + mesh.position.y + 0.006, p.y);
+      });
+      if (topPoints.length >= 2) {
+        topPoints.push(topPoints[0].clone());
+        const topEdge = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(topPoints),
+          new THREE.LineBasicMaterial({ color: 0xf2d68a, transparent: true, opacity: 0.62 }),
+        );
+        topEdge.userData.detailLine = true;
+        group.add(topEdge);
+      }
+    } else {
+      const edge = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: debug.exactExtrusion ? 0xf2d68a : 0x2a2419, transparent: true, opacity: debug.exactExtrusion ? 0.78 : 0.35 }),
+      );
+      edge.position.copy(mesh.position);
+      edge.userData.detailLine = true;
+      group.add(edge);
+    }
     const c = centroid(footprint);
     const wp = worldPoint(c, center, scale);
     const visualProfile = buildingVisualProfile(parcel, footprint, metrics, height);
@@ -2774,28 +4117,35 @@ function buildingForParcel(parcel, center, scale, materials, rayTargets, buildin
   const palette = colorByCategory[parcel.category] || colorByCategory.Commercial;
   const safehouseColor = parcel.isPlayerSafehouse ? 0x36682c : protectedColorForParcel(parcel, palette.wall);
   const safehouseRoof = parcel.isPlayerSafehouse ? 0x24451f : protectedColorForParcel(parcel, palette.roof);
+  const inactive = isInactiveParcel(parcel);
   const wall = new THREE.MeshPhongMaterial({ color: safehouseColor, emissive: parcel.isPlayerSafehouse ? 0x071406 : 0x000000, shininess: 18, side: THREE.DoubleSide });
   const roof = new THREE.MeshLambertMaterial({ color: safehouseRoof });
+  if (inactive) {
+    wall.color.setHex(inactiveColor(safehouseColor));
+    roof.color.setHex(inactiveColor(safehouseRoof));
+  }
   const geo = new THREE.BoxGeometry(width, height, depth);
   const mesh = new THREE.Mesh(geo, wall);
   mesh.position.set(wp.x, height / 2 + 0.05, wp.y);
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   mesh.userData.parcel = parcel;
-  mesh.userData.originalColor = safehouseColor;
+  mesh.userData.activeColor = safehouseColor;
+  mesh.userData.originalColor = inactive ? inactiveColor(safehouseColor) : safehouseColor;
   const group = new THREE.Group();
   group.add(mesh);
   const roofGeo = new THREE.BoxGeometry(width * 1.03, 0.04, depth * 1.03);
   const roofMesh = new THREE.Mesh(roofGeo, roof);
   roofMesh.position.set(wp.x, height + 0.09, wp.y);
   roofMesh.userData.parcel = parcel;
-  roofMesh.userData.originalColor = safehouseRoof;
+  roofMesh.userData.activeColor = safehouseRoof;
+  roofMesh.userData.originalColor = inactive ? inactiveColor(safehouseRoof) : safehouseRoof;
   group.add(roofMesh);
   const shadowGeo = new THREE.PlaneGeometry(width * 1.08, depth * 1.08);
   shadowGeo.rotateX(-Math.PI / 2);
   const shadow = new THREE.Mesh(shadowGeo, materials.shadow);
   shadow.position.set(wp.x + 0.06, 0.045, wp.y + 0.08);
-  group.add(shadow);
+  if (!debug.gridCityView) group.add(shadow);
   if (parcel.isPlayerSafehouse && !debug.contextOnly) group.userData.safehouseMarker = addSafehouseIcon(group, wp.x, height + 0.92, wp.y);
   if (parcel.mafiaProtected && !debug.contextOnly) group.userData.protectionStripes = addProtectionOverlay(group, null, center, scale, wp, width, depth, height, parcel.protectionColor || '#ff1d1d');
   if (parcel.racketReady && !debug.contextOnly) {
@@ -3262,16 +4612,15 @@ function updateMissionTargetObject(entry, target, buildingMap) {
   };
   const from = buildingMap.get(target.fromParcelId) || nearestBuilding(requestedFromCenter);
   const to = buildingMap.get(target.targetParcelId) || nearestBuilding(requestedToCenter);
-  const fromCenter = routePointForBuilding(from, entry.roadNav) || from?.center || requestedFromCenter;
-  const toCenter = routePointForBuilding(to, entry.roadNav) || to?.center || requestedToCenter;
+  const fromCenter = buildingCenterXZ(from) || (from?.center ? { x: from.center.x, z: from.center.y } : null) || (requestedFromCenter ? { x: requestedFromCenter.x, z: requestedFromCenter.y } : null);
+  const toCenter = buildingCenterXZ(to) || (to?.center ? { x: to.center.x, z: to.center.y } : null) || (requestedToCenter ? { x: requestedToCenter.x, z: requestedToCenter.y } : null);
   if (!fromCenter || !toCenter) { rig.visible = false; return false; }
   const routeKey = `${target.missionId || target.id}:${target.fromParcelId}:${target.targetParcelId}`;
   if (rig.userData.routeKey !== routeKey) {
     rig.userData.routeKey = routeKey;
-    const buildingStart = { x: fromCenter.x, z: fromCenter.y };
-    const buildingEnd = { x: toCenter.x, z: toCenter.y };
-    const roadPath = shortestPawnRoadPath(entry.roadNav, buildingStart, buildingEnd) || [];
-    rig.userData.path = [buildingStart].concat(roadPath).concat([buildingEnd]).filter((p, index, arr) => index === 0 || Math.hypot(p.x - arr[index - 1].x, p.z - arr[index - 1].z) > 0.04);
+    rig.userData.path = from && to
+      ? movementPathForBuildings(entry.roadNav, from, to, fromCenter, toCenter)
+      : shortestPawnRoadPath(entry.roadNav, fromCenter, toCenter) || [fromCenter, toCenter];
     clearRouteVisual(rig.userData.trail);
     rig.userData.trailProgressKey = '';
     let routeDistance = 0;
@@ -3321,16 +4670,26 @@ function pedestrianDensityForPayload(payload = {}) {
   return 1;
 }
 
-function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
+function createPopulationRig(scene, agents, blocks, center, scale, roads = [], buildingMap = null) {
   const people = Array.isArray(agents) ? agents.slice(0, 50) : [];
   const destinations = [];
-  (blocks || []).forEach((block) => (block.parcels || []).forEach((parcel) => {
+  const roadNav = buildPawnRoadNav(roads || [], center, scale, blocks || []);
+  if (buildingMap?.size) {
+    buildingMap.forEach((building) => {
+      const parcel = building.parcel || {};
+      if (!parcel.isBuildable || parcel.plannedPark || parcel.isFamilyEstate || parcel.subtype === 'Family Estate') return;
+      const door = routePointForBuilding(building, roadNav);
+      const inside = buildingCenterXZ(building);
+      if (!door || !inside) return;
+      destinations.push({ x: door.x, z: door.y, door: { x: door.x, z: door.y }, inside, parcelId: parcel.id, building });
+    });
+  }
+  if (!destinations.length) (blocks || []).forEach((block) => (block.parcels || []).forEach((parcel) => {
     if (!parcel?.isBuildable || parcel.plannedPark || parcel.isFamilyEstate) return;
     const c = centroid(parcel.polygon || []);
     const wp = worldPoint(c, center, scale);
-    destinations.push({ x: wp.x, z: wp.y, parcelId: parcel.id });
+    destinations.push({ x: wp.x, z: wp.y, door: { x: wp.x, z: wp.y }, inside: { x: wp.x, z: wp.y }, parcelId: parcel.id });
   }));
-  const roadNav = buildPawnRoadNav(roads || [], center, scale, blocks || []);
   if (!people.length || destinations.length < 2) return null;
   const bodyGeometry = new THREE.CapsuleGeometry(0.075, 0.17, 2, 5);
   const headGeometry = new THREE.SphereGeometry(0.066, 6, 5);
@@ -3357,14 +4716,23 @@ function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
     for (let i = 0; i < path.length - 1; i += 1) length += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
     return Math.max(0.4, length);
   };
+  const pedestrianPath = (from, to, seed = 0.5) => {
+    if (!from || !to) return [];
+    if (from.building && to.building) return movementPathForBuildings(roadNav, from.building, to.building, from.inside, to.inside);
+    const start = from.door || { x: from.x, z: from.z };
+    const end = to.door || { x: to.x, z: to.z };
+    const raw = shortestPawnRoadPath(roadNav, start, end) || [start, end];
+    const path = [];
+    appendDistinctPathPoint(path, from.inside || start);
+    raw.forEach((point) => appendDistinctPathPoint(path, point));
+    appendDistinctPathPoint(path, to.inside || end);
+    return roadNav.sidewalkOnly ? path : sidewalkPath(path, seed > 0.5 ? 1 : -1, 0.24);
+  };
   const entries = people.map((person, index) => {
     const seed = Number(person.seed || 0);
     const aDest = pickDestination(seed + index * 0.017, null);
     const bDest = pickDestination(seed * 1.77 + index * 0.113, aDest);
-    const a = { x: aDest.x, z: aDest.z };
-    const b = { x: bDest.x, z: bDest.z };
-    const rawPath = shortestPawnRoadPath(roadNav, a, b) || [a, b];
-    const path = sidewalkPath(rawPath, seed > 0.5 ? 1 : -1, 0.24);
+    const path = pedestrianPath(aDest, bDest, seed);
     const mission = !!person.mission;
     color.set(mission ? 0xd7a83f : ['#55463c', '#38434a', '#4d3e35', '#28332f', '#5b5150'][index % 5]);
     bodies.setColorAt(index, color);
@@ -3374,10 +4742,7 @@ function createPopulationRig(scene, agents, blocks, center, scale, roads = []) {
   function reroute(entry, index) {
     entry.from = entry.to || pickDestination(entry.seed + index * 0.03, null);
     entry.to = pickDestination((entry.seed += 0.371 + index * 0.009), entry.from);
-    const a = { x: entry.from.x, z: entry.from.z };
-    const b = { x: entry.to.x, z: entry.to.z };
-    const rawPath = shortestPawnRoadPath(roadNav, a, b) || [a, b];
-    entry.path = sidewalkPath(rawPath, entry.seed > 0.5 ? 1 : -1, 0.24);
+    entry.path = pedestrianPath(entry.from, entry.to, entry.seed);
     entry.distance = routeLength(entry.path);
     entry.phase = 0;
     entry.inside = false;
@@ -3443,6 +4808,7 @@ function buildScene(payload) {
   const debug = Object.assign({}, emptyDebug, payload.debug || {});
   const generated = generate3dDistrict(payload);
   const sceneData = Object.assign({}, payload, generated);
+  debug.gridCityView = !!sceneData.gridCityView;
   const b = payloadBounds(sceneData);
   const center = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
   const scale = WORLD_SCALE;
@@ -3453,6 +4819,7 @@ function buildScene(payload) {
   const buildingQueue = [];
   const buildingFootprints = [];
   let renderedBuildingCount = 0;
+  const maxMainBuildings = sceneData.gridCityView ? 760 : Infinity;
   const outlineGroup = new THREE.Group();
   const debugRoadClipGroup = new THREE.Group();
   const debugCameraGroup = new THREE.Group();
@@ -3472,20 +4839,26 @@ function buildScene(payload) {
     contextBuildingCount += result.buildings || 0;
   });
 
-  addFlatShape(scene, sceneData.outerPolygon, center, scale, 0x969a91, 0, 1);
+  if (!sceneData.gridCityView) addFlatShape(scene, sceneData.outerPolygon, center, scale, 0x969a91, 0, 1);
   addBridgeLandingMarkers(scene, sceneData.bridgeLandings, center, scale);
   const boundary = addLineLoop(scene, sceneData.outerPolygon, center, scale, 0xdfe8d4, 0.08);
   if (boundary) boundary.visible = !!debug.boundary;
 
   (sceneData.blocks || []).forEach((block) => {
-    addFlatShape(scene, block.polygon, center, scale, 0x8e9289, 0.022, 0.72);
+    if (!sceneData.gridCityView) addFlatShape(scene, block.polygon, center, scale, 0x8e9289, 0.022, 0.72);
     addLineLoop(scene, block.polygon, center, scale, 0x42483f, 0.09);
     const blockArea = Math.max(1, areaFromPoly(block.polygon) * scale * scale);
     let coveredArea = 0;
     const cap = blockArea * (0.65 + hashNumber(`${block.id}-density-cap`) * 0.15);
     (block.parcels || []).forEach((parcel) => {
-      const outline = addLineLoop(scene, parcel.polygon, center, scale, debug.exactExtrusion ? 0xffe08a : 0x222222, 0.11);
-      if (outline) outlineGroup.add(outline);
+      if (!sceneData.gridCityView) {
+        const outline = addLineLoop(scene, parcel.polygon, center, scale, debug.exactExtrusion ? 0xffe08a : 0x222222, 0.11);
+        if (outline) outlineGroup.add(outline);
+      }
+      if (renderedBuildingCount >= maxMainBuildings && !parcel.isFamilyEstate && !parcel.isPlayerSafehouse) {
+        if (!sceneData.gridCityView) addLotSurface(parcel, center, scale, scene, 'empty');
+        return;
+      }
       const metrics = worldMetrics(parcel.polygon, center, scale);
       const parcelWorldArea = Math.max(0.001, areaFromPoly(parcel.polygon) * scale * scale);
       const projectedCoverage = parcelWorldArea * Math.pow(footprintFactor(parcel), 2);
@@ -3502,19 +4875,40 @@ function buildScene(payload) {
         renderedBuildingCount += 1;
         coveredArea += projectedCoverage;
       } else {
-        addLotSurface(parcel, center, scale, scene, 'park');
+        if (!sceneData.gridCityView) addLotSurface(parcel, center, scale, scene, 'park');
       }
     });
   });
 
   debugRoadClipGroup.visible = !!debug.roadClipPoints;
-  (sceneData.roads || []).forEach((road) => clippedRoadMeshes(scene, road, sceneData.outerPolygon, center, scale, debug.roadClipPoints ? debugRoadClipGroup : null, buildingFootprints));
+  if (sceneData.gridCityView) {
+    (sceneData.roads || []).forEach((road) => {
+      const span = roadAxisSpanThroughPolygon(road, sceneData.outerPolygon);
+      if (!span) return;
+      const sidewalks = sidewalkMeshForRoad(road, center, scale, span.a, span.b, sceneData.outerPolygon, { capScale: 0, color: GRID_SIDEWALK_COLOR, y: 0.031 });
+      if (sidewalks) scene.add(sidewalks);
+    });
+  }
+  (sceneData.roads || []).forEach((road) => clippedRoadMeshes(
+    scene,
+    road,
+    sceneData.outerPolygon,
+    center,
+    scale,
+    debug.roadClipPoints ? debugRoadClipGroup : null,
+    sceneData.gridCityView ? [] : buildingFootprints,
+    sceneData.gridCityView ? { capScale: 0, color: GRID_ROAD_COLOR, y: 0.038, ignoreBuildingFootprints: true } : {},
+  ));
+  if (sceneData.gridCityView) addGridRoadIntersectionPatches(scene, sceneData.roads || [], sceneData.outerPolygon, center, scale);
+  if (sceneData.gridCityView) addRoadNameLabels(scene, sceneData.roads || [], sceneData.outerPolygon, center, scale);
   // Street lighting is represented by the scene illumination; omit the old floating bulb dots.
   scene.add(debugRoadClipGroup);
   buildingQueue.forEach((building) => {
     scene.add(building);
     if (building.userData.safehouseMarker) safehouseMarkers.push(building.userData.safehouseMarker);
   });
+  const territoryGroup = buildMergedMafiaTerritoryOverlay(sceneData.blocks || [], payload.mafiaTerritoryBlocks || [], payload.mafiaColor || '#ff1d1d', center, scale, buildingMap);
+  if (territoryGroup) scene.add(territoryGroup);
   outlineGroup.visible = !!debug.parcelOutlines;
   scene.add(outlineGroup);
   if (payload.estateFocus) applyEstateFocusDimming(scene, payload.selectedParcelId);
@@ -3554,8 +4948,8 @@ function buildScene(payload) {
     subtypes: topCounts(countBy(allRenderedParcels, (parcel) => parcel.subtype || parcel.kind), 5),
     sizes: topCounts(countBy(allRenderedParcels, (parcel) => parcel.sizeClass || (parcel.size ? `Size ${parcel.size}` : 'Unknown')), 5),
   };
-  const populationRig = createPopulationRig(scene, payload.populationAgents, sceneData.blocks, center, scale, sceneData.roads || []);
-  return { scene, rayTargets, districtTargets, safehouseMarkers, center, scale, bounds: b, buildingMap, debugRoadClipGroup, debugCameraGroup, outlineGroup, boundary, roadSpawn, generated: sceneData, ambient, sun, populationRig };
+  const populationRig = createPopulationRig(scene, payload.populationAgents, sceneData.blocks, center, scale, sceneData.roads || [], buildingMap);
+  return { scene, rayTargets, districtTargets, safehouseMarkers, center, scale, bounds: b, buildingMap, debugRoadClipGroup, debugCameraGroup, outlineGroup, territoryGroup, boundary, roadSpawn, generated: sceneData, ambient, sun, populationRig };
 }
 
 function mount(root, payload, onSelect) {
@@ -3570,13 +4964,14 @@ function mount(root, payload, onSelect) {
   root.innerHTML = '';
   root.appendChild(renderer.domElement);
 
-  const { scene, rayTargets, districtTargets, safehouseMarkers, buildingMap, debugCameraGroup, outlineGroup, center, scale, roadSpawn, generated, ambient, sun, populationRig } = buildScene(payload);
+  const { scene, rayTargets, districtTargets, safehouseMarkers, buildingMap, debugCameraGroup, outlineGroup, territoryGroup, center, scale, roadSpawn, generated, ambient, sun, populationRig } = buildScene(payload);
   const islandNavDistricts = generated.contextDistricts || [];
   const navRoads = (generated.roads || [])
     .concat(generated.inheritedRoads || [])
     .concat(...islandNavDistricts.map((district) => (district.renderedRoads || district.roads || []).concat(district.inheritedRoads || [])));
   const navBlocks = (generated.blocks || []).concat(...islandNavDistricts.map((district) => district.renderedBlocks || district.blocks || []));
   const roadNav = buildPawnRoadNav(navRoads, center, scale, navBlocks);
+  ensureBuildingEntryPoints(buildingMap, roadNav);
   const playerPawn = createPlayerPawn(payload.playerPawn || {});
   const missionTarget = createMissionTargetRig(scene);
   const missionHighlight = createMissionHighlightRig(scene);
@@ -3596,7 +4991,7 @@ function mount(root, payload, onSelect) {
   const estateFocus = !!payload.estateFocus && !!payload.selectedParcelId;
   const viewKey = (payload.islandView ? `island:${payload.islandId || payload.islandName || payload.district?.id || 'district'}` : (payload.district?.id || 'district')) + (estateFocus ? ':estate' : '');
   const saved = savedViews.get(viewKey) || {};
-  let zoom = saved.zoom || (payload.islandView ? 0.74 : 1);
+  let zoom = saved.zoom || (payload.gridCityView ? 0.46 : payload.islandView ? 0.74 : 1);
   let panX = saved.panX || 0;
   let panZ = saved.panZ || 0;
   let azimuth = typeof saved.azimuth === 'number' ? saved.azimuth : Math.PI / 4;
@@ -4274,8 +5669,9 @@ function mount(root, payload, onSelect) {
   updatePlayerPawnObject({ root, playerPawn, playerRoute, queuedRouteGroup, roadNav, roadSpawn }, payload.playerPawn, buildingMap);
   const frame = requestAnimationFrame(animate);
   function focusParcel(parcelId, sourceLocation) { const destination = buildingMap.get(parcelId), point = destination?.center || (sourceLocation ? worldPoint(sourceLocation, center, scale) : null); if (!point) return false; panX = point.x; panZ = point.y; targetZoom = Math.max(1.35, targetZoom); cameraMode = 'iso'; saveView(); renderLoop(); return true; }
-  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, animate, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale, populationRig };
+  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, animate, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale, territoryGroup, generated, populationRig };
   mounted.set(root, mountedEntry);
+  refreshMergedMafiaTerritoryOverlay(mountedEntry);
   updateMissionTargetObject(mountedEntry, payload.missionTarget, buildingMap);
   updateMissionHighlightObject(mountedEntry, payload.missionHighlight);
   populationRig?.update(performance.now(), false, 1, pedestrianDensityForPayload(payload));
@@ -4371,10 +5767,13 @@ function updateRackets(root, racketPayload) {
   const payload = racketPayload || {};
   root._deskDonPayload.mafiaColor = payload.mafiaColor || root._deskDonPayload.mafiaColor || '#ff1d1d';
   root._deskDonPayload.protectedBusinesses = payload.protectedBusinesses || {};
+  root._deskDonPayload.mafiaTerritoryBlocks = payload.mafiaTerritoryBlocks || root._deskDonPayload.mafiaTerritoryBlocks || [];
+  root._deskDonPayload.buildingStates = payload.buildingStates || root._deskDonPayload.buildingStates || {};
   root._deskDonPayload.collectionRushActive = !!payload.collectionRushActive;
   withMounted(root, (entry) => {
     const protectedBusinesses = root._deskDonPayload.protectedBusinesses || {};
     entry.buildingMap.forEach((building, id) => {
+      applyBuildingOperationalVisual(building, root._deskDonPayload.buildingStates[id]);
       const starterRacket = root._deskDonPayload.collectionRushActive && building.parcel.mafiaProtected && building.parcel.racketWeeklyDue
         ? { color: building.parcel.protectionColor || root._deskDonPayload.mafiaColor || '#ff1d1d', weeklyDue: building.parcel.racketWeeklyDue, ready: true }
         : null;
@@ -4384,10 +5783,12 @@ function updateRackets(root, racketPayload) {
           building.group.userData.racketMoneyMarker.userData.racketInactive = true;
           building.group.userData.racketMoneyMarker.visible = false;
         }
+        building.parcel.mafiaControlled = !!(building.parcel.isFamilyEstate || building.parcel.subtype === 'Family Estate');
         return;
       }
       const color = racket.color || root._deskDonPayload.mafiaColor || '#ff1d1d';
       building.parcel.mafiaProtected = true;
+      building.parcel.mafiaControlled = !!racket.controlled;
       building.parcel.protectionColor = color;
       building.parcel.racketWeeklyDue = racket.weeklyDue || building.parcel.racketWeeklyDue || 0;
       building.parcel.racketReady = !!racket.ready;
@@ -4403,13 +5804,40 @@ function updateRackets(root, racketPayload) {
       building.group.userData.racketMoneyMarker.userData.racketInactive = !racket.ready;
       building.group.userData.racketMoneyMarker.visible = !!racket.ready;
     });
+    refreshMergedMafiaTerritoryOverlay(entry);
+    entry.renderLoop?.();
+  });
+}
+
+function updateBuildingStates(root, buildingStates) {
+  if (!root?._deskDonPayload) return;
+  root._deskDonPayload.buildingStates = buildingStates || {};
+  withMounted(root, (entry) => {
+    entry.buildingMap.forEach((building, id) => {
+      applyBuildingOperationalVisual(building, root._deskDonPayload.buildingStates[id]);
+    });
     entry.renderLoop?.();
   });
 }
 
 function focusParcel(root, parcelId, sourceLocation) { let focused = false; withMounted(root, (entry) => { focused = !!entry.focusParcel?.(parcelId, sourceLocation); }); return focused; }
-window.DeskDon3D = { mount, cleanup, rotate, cameraView, resetCamera, focusParcel, updateTime, updateFogOpacity, updateRackets, setSuspended };
+window.DeskDon3D = { mount, cleanup, rotate, cameraView, resetCamera, focusParcel, updateTime, updateFogOpacity, updateRackets, updateBuildingStates, setSuspended };
 window.DeskDon3D.exportData = function exportData(root) {
   return root?._deskDonGenerated || null;
+};
+window.DeskDon3D.exportTerritoryDebug = function exportTerritoryDebug(root) {
+  const entry = mounted.get(root);
+  if (!entry) return null;
+  const generated = entry.generated || root?._deskDonGenerated || {};
+  const blocks = generated.blocks || [];
+  const controlled = Array.from(controlledTerritoryBlockIds(blocks, root?._deskDonPayload?.mafiaTerritoryBlocks || [], entry.buildingMap, entry.center || { x: 0, y: 0 }, entry.scale || WORLD_SCALE));
+  const estateBuildings = [];
+  entry.buildingMap?.forEach((building) => {
+    const parcel = building.parcel || {};
+    if (parcel.isFamilyEstate || String(parcel.subtype || '').toLowerCase() === 'family estate') {
+      estateBuildings.push({ parcelId: parcel.id, blockId: parcel.blockId, center: { x: building.center?.x || 0, y: building.center?.y || 0 } });
+    }
+  });
+  return { payloadBlocks: root?._deskDonPayload?.mafiaTerritoryBlocks || [], controlled, estateBuildings, territoryMeshes: entry.territoryGroup?.children?.length || 0 };
 };
 window.dispatchEvent(new Event('deskdon-three-ready'));

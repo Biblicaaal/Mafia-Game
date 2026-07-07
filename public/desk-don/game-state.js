@@ -40,6 +40,7 @@
 
     game.world=object(game.world);
     game.world.protectedBuildings=object(first(game.world.protectedBuildings,legacyValue(state,'protectedBusinesses')));
+    game.world.buildingStates=object(first(game.world.buildingStates,legacyValue(state,'buildingStates')));
     game.world.scouting=object(first(game.world.scouting,legacyValue(state,'buildingIntel')));
     game.world.pressure=object(game.world.pressure);
     game.world.pressure.heat=Number(first(game.world.pressure.heat,legacyValue(state,'heat')))||0;
@@ -74,7 +75,7 @@
   var aliases={
     clean:['player','money','clean'],dirty:['player','money','dirty'],playerLocation:['player','location'],
     collectionEnvelopes:['economy','heldEnvelopes'],organizationFinance:['economy','mafia'],
-    protectedBusinesses:['world','protectedBuildings'],buildingIntel:['world','scouting'],heat:['world','pressure','heat'],police:['world','pressure','police'],
+    protectedBusinesses:['world','protectedBuildings'],buildingStates:['world','buildingStates'],buildingIntel:['world','scouting'],heat:['world','pressure','heat'],police:['world','pressure','police'],
     selected:['selection','districtId'],selectedParcel:['selection','buildingId'],selected3dParcel:['selection','renderedBuilding'],contextParcel:['selection','contextBuilding'],
     day:['clock','day'],time:['clock','period'],timeMinuteOfDay:['clock','minuteOfDay'],
     playerSafehouse:['safehouse','assignment'],safehouseRent:['safehouse','rent'],safehouseNeeds:['safehouse','needs'],safehouseUtilities:['safehouse','utilities'],safehouseOwnership:['safehouse','ownership'],
