@@ -2927,22 +2927,58 @@ function startExtortionEncounter(p){
 }
 function openExtortionQte(p){
   setTimeSpeed(1);
-  state.extortionEncounter={parcelId:p.id,parcel:p,ownerMood:ownerThresholdFor(p),greenHits:0,redHits:0,attempts:0,triesLeft:2,lastResult:'',feedback:'Stop the red line. You get two tries to pressure the owner.',startedAt:Date.now(),active:true};
+  state.extortionEncounter={parcelId:p.id,parcel:p,ownerMood:ownerThresholdFor(p),attempts:0,triesLeft:1,lastResult:'',feedback:'Hold pressure, then release inside the white band for the best protection payment. One try only.',startedAt:Date.now(),active:true,charging:false,chargeStartedAt:0,chargeDurationMs:2300,chargeProgress:0,releaseProgress:0};
 }
-function resolveExtortionQte(){
+var extortionChargeFrame=0;
+function extortionChargeProgress(e){
+  if(!e)return 0;
+  if(e.finished)return clamp(Number(e.releaseProgress||e.chargeProgress)||0,0,1);
+  if(e.charging&&e.chargeStartedAt){
+    return clamp((Date.now()-e.chargeStartedAt)/Math.max(500,Number(e.chargeDurationMs)||2300),0,1);
+  }
+  return clamp(Number(e.chargeProgress)||0,0,1);
+}
+function extortionBand(progress){
+  progress=clamp(Number(progress)||0,0,1);
+  if(progress>=.9)return{success:false,result:'red',mood:'Furious',label:'No deal',feedback:'You pushed too far. The owner snaps and the protection deal collapses.'};
+  if(progress>=.74)return{success:true,result:'white',mood:'Broken',label:'Sweet spot',feedback:'Perfect pressure. The owner folds and agrees to an inflated protection payment.'};
+  if(progress>=.45)return{success:true,result:'gray',mood:'Extorted',label:'Standard deal',feedback:'Steady pressure. The owner accepts standard protection.'};
+  return{success:true,result:'lightgray',mood:'Lowballed',label:'Lowballed',feedback:'Too soft. The owner agrees, but only at a low weekly payment.'};
+}
+function paintExtortionCharge(){
+  var e=state.extortionEncounter,meter=document.querySelector('.extortion-circular-meter'),readout=document.querySelector('[data-extortion-readout]');
+  if(!e||!meter)return;
+  var p=extortionChargeProgress(e),band=extortionBand(p);
+  meter.style.setProperty('--progress',p.toFixed(4));
+  meter.classList.toggle('charging',!!e.charging&&!e.finished);
+  meter.setAttribute('data-band',band.result);
+  if(readout)readout.textContent=Math.round(p*100)+'% - '+band.label;
+  if(e.charging&&!e.finished)extortionChargeFrame=requestAnimationFrame(paintExtortionCharge);
+  else extortionChargeFrame=0;
+}
+function startExtortionCharge(){
+  var e=state.extortionEncounter;
+  if(!e||!e.active||e.finished||e.charging)return;
+  e.charging=true;
+  e.chargeStartedAt=Date.now()-extortionChargeProgress(e)*Math.max(500,Number(e.chargeDurationMs)||2300);
+  e.feedback='Hold... release in white for the best payment, gray for standard, light gray for lowball. Red kills the deal.';
+  paintExtortionCharge();
+}
+function releaseExtortionCharge(){
+  var e=state.extortionEncounter;
+  if(!e||!e.active||e.finished||!e.charging)return;
+  e.chargeProgress=extortionChargeProgress(e);
+  e.releaseProgress=e.chargeProgress;
+  e.charging=false;
+  if(extortionChargeFrame){cancelAnimationFrame(extortionChargeFrame);extortionChargeFrame=0;}
+  resolveExtortionQte(e.releaseProgress);
+}
+function resolveExtortionQte(progress){
   var e=state.extortionEncounter;if(!e||!e.active)return;
   if(e.finished){state.extortionEncounter=null;refreshExtortionModal();if(state.pendingDistrictRefresh){state.pendingDistrictRefresh=false;updateMountedRacketVisuals();refreshLiveTimeUI(true);}else refreshLiveTimeUI(true);return;}
-  var cycle=1200,pos=((Date.now()-e.startedAt)%cycle)/cycle,mood=e.ownerMood||'Neutral',result='neutral';
-  if(pos>.9){e.greenHits++;result='green';mood=e.greenHits>=2?'Broken':'Extorted';}
-  else if(pos<.6){e.redHits++;result='red';mood=e.redHits>=2?'Furious':'Angry';}
-  else result='white';
-  e.ownerMood=mood;e.lastResult=result;e.attempts=(e.attempts||0)+1;e.triesLeft=Math.max(0,2-e.attempts);
-  if(result==='green')e.feedback=mood==='Broken'?'Perfect pressure. The owner is broken and will overpay.':'Strong pressure. The owner is scared; one more clean hit can break them.';
-  else if(result==='white')e.feedback=e.triesLeft?'Neutral pressure. The deal is acceptable, but one try remains to improve it.':'Neutral pressure. The owner accepts standard protection.';
-  else e.feedback=mood==='Furious'?'The owner is furious. The racket fails.':'Bad pressure. The owner is angry; one more red result ends the deal.';
-  if(mood==='Furious'){finishExtortion(false,mood,result);return;}
-  if(e.triesLeft<=0||mood==='Broken'){finishExtortion(true,mood,result);return;}
-  e.startedAt=Date.now();
+  var band=extortionBand(progress==null?extortionChargeProgress(e):progress);
+  e.ownerMood=band.mood;e.lastResult=band.result;e.attempts=1;e.triesLeft=0;e.feedback=band.feedback;e.releaseProgress=progress==null?extortionChargeProgress(e):progress;
+  finishExtortion(!!band.success,band.mood,band.result);return;
   refreshExtortionModal();
 }
 function finishExtortion(success,mood,result){
@@ -2950,7 +2986,7 @@ function finishExtortion(success,mood,result){
   if(!state.extortionState)state.extortionState={};
   if(!state.protectedBusinesses)state.protectedBusinesses={};
   if(success){
-    var p=e.parcel,base=Math.max(10,Math.round((p.propertyValue||1000)*.004)),mult=mood==='Broken'?1.3:mood==='Extorted'?1.1:1;
+    var p=e.parcel,base=Math.max(10,Math.round((p.propertyValue||1000)*.004)),mult=mood==='Broken'?1.3:mood==='Extorted'?1:mood==='Lowballed'?.7:1;
     state.extortionState[p.id]={mood:mood,weeklyDue:Math.round(base*mult),lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8,result:result};
     state.protectedBusinesses[p.id]={family:'player',color:'#ff1d1d',weeklyDue:Math.round(base*mult),lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8};
     state.pendingDistrictRefresh=true;
@@ -2973,8 +3009,8 @@ function finishExtortion(success,mood,result){
 }
 function extortionModalView(){
   var e=state.extortionEncounter;if(!e||!e.active)return'';
-  var result=e.lastResult?'<b class="result-'+esc(e.lastResult)+'">'+esc(e.lastResult.toUpperCase())+'</b>':'<b>Waiting</b>';
-  return '<div class="extortion-modal"><div class="extortion-chat '+(e.finished?'finished':'')+'"><section><small>Protection Racket</small><h3>'+esc((e.parcel&&e.parcel.label)||'Business Owner')+'</h3><div class="extortion-status"><span>Owner state <b>'+esc(e.ownerMood||'Neutral')+'</b></span><span>Tries left <b>'+esc(e.triesLeft===undefined?2:e.triesLeft)+'</b></span><span>Last stop '+result+'</span></div><p class="extortion-feedback">'+esc(e.feedback||'Stop the line with Space or the button.')+'</p><p class="muted">Green improves the deal, white keeps it steady, red makes the owner angry. Two tries only.</p></section><div class="extortion-meter" data-action="extortionStop"><span class="zone green"></span><span class="zone white"></span><span class="zone red"></span><i></i></div><div class="extortion-actions"><button class="primary" data-action="'+(e.finished?'cancelExtortion':'extortionStop')+'">'+(e.finished?'Close':'Stop line')+'</button><button data-action="cancelExtortion">'+(e.finished?'Done':'Walk away')+'</button></div></div></div>';
+  var result=e.lastResult?'<b class="result-'+esc(e.lastResult)+'">'+esc((extortionBand(e.releaseProgress||e.chargeProgress).label||e.lastResult).toUpperCase())+'</b>':'<b>Hold to pressure</b>',progress=extortionChargeProgress(e),band=extortionBand(progress);
+  return '<div class="extortion-modal"><div class="extortion-chat '+(e.finished?'finished':'')+'"><section><small>Protection Racket</small><h3>'+esc((e.parcel&&e.parcel.label)||'Business Owner')+'</h3><div class="extortion-status"><span>Owner state <b>'+esc(e.ownerMood||'Neutral')+'</b></span><span>Tries left <b>'+esc(e.triesLeft===undefined?1:e.triesLeft)+'</b></span><span>Result '+result+'</span></div><p class="extortion-feedback">'+esc(e.feedback||'Hold, then release before you overshoot into red.')+'</p><p class="muted">Hold mouse or Space to fill clockwise from the top. Light gray is lowball, gray is standard, white is best, red cancels the deal.</p></section><div class="extortion-circular-wrap"><button class="extortion-circular-meter '+(e.charging?'charging':'')+'" data-action="extortionHold" data-band="'+esc(band.result)+'" style="--progress:'+progress.toFixed(4)+'" '+(e.finished?'disabled':'')+'><span class="ring-zones"></span><span class="ring-fill"></span><span class="ring-core"><b>$</b><small data-extortion-readout>'+Math.round(progress*100)+'% - '+esc(band.label)+'</small></span></button><div class="extortion-zone-legend"><span class="low">Lowball</span><span class="standard">Standard</span><span class="best">Best</span><span class="fail">No deal</span></div></div><div class="extortion-actions"><button class="primary" data-action="'+(e.finished?'cancelExtortion':'extortionHold')+'">'+(e.finished?'Close':'Hold pressure')+'</button><button data-action="cancelExtortion">'+(e.finished?'Done':'Walk away')+'</button></div></div></div>';
 }
 function refreshExtortionModal(){
   var root=document.getElementById('extortion-live-root');
@@ -2983,7 +3019,36 @@ function refreshExtortionModal(){
   if(!html){if(root)root.remove();return;}
   if(!root){root=document.createElement('div');root.id='extortion-live-root';document.body.appendChild(root);}
   root.innerHTML=html;
+  paintExtortionCharge();
 }
+document.addEventListener('pointerdown',function(e){
+  var trigger=e.target.closest&&e.target.closest('[data-action="extortionHold"],.extortion-circular-meter');
+  if(!trigger||!state.extortionEncounter||state.extortionEncounter.finished)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  startExtortionCharge();
+},true);
+document.addEventListener('pointerup',function(e){
+  if(!state.extortionEncounter||!state.extortionEncounter.charging)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  releaseExtortionCharge();
+},true);
+document.addEventListener('pointercancel',function(){
+  if(state.extortionEncounter&&state.extortionEncounter.charging)releaseExtortionCharge();
+},true);
+document.addEventListener('keydown',function(e){
+  var tag=(e.target&&e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return;
+  if((e.key===' '||e.code==='Space')&&state.extortionEncounter&&state.extortionEncounter.active&&!state.extortionEncounter.finished){
+    e.preventDefault();e.stopImmediatePropagation();
+    startExtortionCharge();
+  }
+},true);
+document.addEventListener('keyup',function(e){
+  if((e.key===' '||e.code==='Space')&&state.extortionEncounter&&state.extortionEncounter.charging){
+    e.preventDefault();e.stopImmediatePropagation();
+    releaseExtortionCharge();
+  }
+},true);
 function districtOverviewPanel(d,l){
   var stats=districtParcelStats(l),m=districtScaledMetrics(d,l);
   var intro='<section class="building-info-empty"><small>Island inspection</small><h3>'+esc(islandDisplayName(currentIslandId()))+'</h3><p>Select a building in the 3D view to inspect its structural footprint, capacity, ingress points, and current parcel values.</p>'+metricGrid([['Buildings / parcels',stats.total],['Top categories',stats.topCategories||'None'],['Top subtypes',stats.topSubtypes||'None'],['Local area',fmtAreaMetric(m.scaledArea)]])+'</section>';
