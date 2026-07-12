@@ -517,7 +517,7 @@
   color:#fff4d4!important;
 }
 .time-primary-controls{
-  gap:7px;
+  gap:0;
   justify-content:flex-end;
 }
 .time-primary-controls .speed-actions{
@@ -832,131 +832,222 @@
 
 /* Scarface-style hold/release pressure meter for extortion. Gameplay still resolves through the existing extortion encounter state. */
 .extortion-chat{
-  width:min(760px,92vw);
-  grid-template-columns:minmax(0,1fr) 250px;
+  width:min(790px,92vw);
+  position:relative;
+  grid-template-columns:270px minmax(0,1fr);
   align-items:center;
+  gap:24px;
+  padding:22px;
+  overflow:hidden;
+  background:linear-gradient(180deg,rgba(24,20,15,.98),rgba(10,9,7,.99));
 }
-.extortion-status .result-lightgray{color:#cfc7b3}
+.extortion-chat:before{content:"";position:absolute;inset:0;z-index:1;background:rgba(0,0,0,.54);opacity:0;pointer-events:none;transition:opacity .45s ease}
+.extortion-chat.intro-playing:before{opacity:1}
+.extortion-chat section{grid-column:2;grid-row:1;position:relative;z-index:0;transition:opacity .6s ease .12s,filter .6s ease .12s,transform .65s cubic-bezier(.2,.78,.2,1)}
+.extortion-chat.intro-playing section{opacity:.12;filter:blur(1.5px);transform:translateX(10px)}
+.extortion-heading{border-bottom:1px solid rgba(214,182,92,.22);margin-bottom:14px;padding-bottom:8px}
+.extortion-heading small{color:#a98c4d;letter-spacing:.14em;text-transform:uppercase}
+.extortion-heading h3{margin:3px 0 0;font-size:22px}
+.extortion-status{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:10px}
+.extortion-status span{padding:7px 8px;background:#100f0c;border-color:#2a261d;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.extortion-status b{font-size:13px;margin-top:3px;text-transform:none;letter-spacing:0}
+.extortion-feedback{min-height:46px;margin:0;border-left-width:2px;background:#15130f;padding:9px 11px}
+.extortion-instruction{margin:10px 0 0;color:#8f856e;font-size:10px;letter-spacing:.035em;text-transform:uppercase;line-height:1.5}
 .extortion-status .result-gray{color:#a9a9a9}
 .extortion-status .result-white{color:#fff4d8;text-shadow:0 0 10px rgba(255,238,186,.5)}
+.extortion-status .result-black{color:#fff;text-shadow:0 0 12px rgba(255,255,255,.7)}
 .extortion-status .result-red{color:#ff6d5e;text-shadow:0 0 10px rgba(255,40,24,.45)}
 .extortion-circular-wrap{
+  grid-column:1;
+  grid-row:1;
+  position:relative;
+  z-index:3;
   display:grid;
   justify-items:center;
   gap:13px;
   align-self:center;
+  transition:transform .72s cubic-bezier(.16,.86,.22,1);
 }
+.extortion-chat.intro-playing .extortion-circular-wrap{transform:translateX(calc(min(395px,46vw) - 135px))}
 .extortion-circular-meter{
   --progress:0;
   position:relative;
-  width:188px;
-  height:188px;
-  border:2px solid #070605;
+  width:210px;
+  height:210px;
+  border:1px solid #050505;
   border-radius:50%;
   padding:0;
   overflow:hidden;
   background:
-    conic-gradient(from -90deg,
-      #b9b6ac 0deg 162deg,
-      #686868 162deg 266deg,
-      #f3eee2 266deg 324deg,
-      #ab1712 324deg 360deg);
+    conic-gradient(from 0deg,
+      #b91d20 0deg 118.8deg,
+      #aaa 118.8deg 298.8deg,
+      #f5f2e9 298.8deg 345.6deg,
+      #050505 345.6deg 360deg);
   box-shadow:
-    inset 0 0 0 8px rgba(0,0,0,.34),
-    inset 0 0 0 12px rgba(255,255,255,.08),
-    0 18px 42px rgba(0,0,0,.55),
-    0 0 0 1px rgba(230,198,110,.25);
+    inset 0 0 0 2px rgba(0,0,0,.55),
+    0 12px 28px rgba(0,0,0,.48),
+    0 0 0 1px rgba(214,182,92,.18);
   cursor:pointer;
   touch-action:none;
 }
 .extortion-circular-meter:disabled{cursor:default}
 .extortion-circular-meter .ring-zones,
+.extortion-circular-meter .ring-demo,
+.extortion-circular-meter .ring-intro,
 .extortion-circular-meter .ring-fill{
   position:absolute;
   inset:0;
   border-radius:50%;
 }
+.extortion-circular-meter .ring-intro{z-index:3;opacity:0;pointer-events:none;mix-blend-mode:screen;filter:brightness(1.7) drop-shadow(0 0 8px rgba(255,255,255,.7))}
+.extortion-circular-meter .intro-red{background:conic-gradient(from 0deg,rgba(255,52,48,.95) 0deg 118.8deg,transparent 118.8deg)}
+.extortion-circular-meter .intro-gray{background:conic-gradient(from 0deg,transparent 0deg 118.8deg,rgba(238,238,238,.88) 118.8deg 298.8deg,transparent 298.8deg)}
+.extortion-circular-meter .intro-white{background:conic-gradient(from 0deg,transparent 0deg 298.8deg,#fff 298.8deg 345.6deg,transparent 345.6deg)}
+.extortion-circular-meter .intro-black{background:conic-gradient(from 0deg,transparent 0deg 345.6deg,rgba(255,217,108,.95) 345.6deg 360deg)}
+.extortion-chat.full-intro .extortion-circular-meter.demonstrating .intro-red{animation:extortionZoneFocus 1.65s ease .55s both}
+.extortion-chat.full-intro .extortion-circular-meter.demonstrating .intro-gray{animation:extortionZoneFocus 1.65s ease 2.35s both}
+.extortion-chat.full-intro .extortion-circular-meter.demonstrating .intro-white{animation:extortionZoneFocus 1.65s ease 4.15s both}
+.extortion-chat.full-intro .extortion-circular-meter.demonstrating .intro-black{animation:extortionZoneFocus 1.65s ease 5.95s both}
 .extortion-circular-meter .ring-zones{
-  background:
-    radial-gradient(circle at 50% 50%,transparent 0 50%,rgba(0,0,0,.38) 51% 58%,transparent 59%),
-    repeating-conic-gradient(from -90deg,rgba(0,0,0,.24) 0 2deg,transparent 2deg 10deg);
-  mix-blend-mode:multiply;
-  opacity:.72;
+  background:conic-gradient(from 0deg,
+    rgba(0,0,0,.75) 0deg 1deg,transparent 1deg 117.8deg,
+    rgba(0,0,0,.75) 117.8deg 119.8deg,transparent 119.8deg 297.8deg,
+    rgba(0,0,0,.75) 297.8deg 299.8deg,transparent 299.8deg 344.6deg,
+    rgba(0,0,0,.75) 344.6deg 346.6deg,transparent 346.6deg 359deg,
+    rgba(0,0,0,.75) 359deg 360deg);
   z-index:1;
 }
+.extortion-circular-meter .ring-demo{display:none;z-index:2;background:conic-gradient(from 0deg,rgba(255,211,91,.9) 0 calc(var(--demo-progress) * 1turn),transparent 0 1turn);mix-blend-mode:screen}
+.extortion-circular-meter.demonstrating .ring-demo{display:block}
+.extortion-chat.full-intro .extortion-circular-meter.demonstrating .ring-demo{animation:extortionDemoSweep 1.8s cubic-bezier(.3,.02,.23,1) 7.85s forwards}
+.extortion-chat.quick-intro .extortion-circular-meter.demonstrating .ring-demo{animation:extortionDemoSweep .68s cubic-bezier(.3,.02,.23,1) .08s forwards}
 .extortion-circular-meter .ring-fill{
-  background:conic-gradient(from -90deg,rgba(238,190,58,.97) 0 calc(var(--progress) * 1turn),transparent 0 1turn);
-  filter:drop-shadow(0 0 8px rgba(239,195,73,.55));
+  background:conic-gradient(from 0deg,rgba(255,218,104,.52) 0 calc(var(--progress) * 1turn),transparent 0 1turn);
+  filter:drop-shadow(0 0 4px rgba(255,211,73,.45));
+  mix-blend-mode:screen;
   z-index:2;
 }
 .extortion-circular-meter .ring-fill:after{
   content:"";
   position:absolute;
-  left:50%;
-  top:50%;
-  width:8px;
-  height:88px;
-  border-radius:999px;
-  background:linear-gradient(180deg,#fff3b3,#d49b23);
-  box-shadow:0 0 12px rgba(255,221,111,.9);
-  transform-origin:50% 0;
-  transform:rotate(calc(var(--progress) * 360deg)) translate(-50%,-100%);
+  left:calc(50% - 2px);
+  top:4px;
+  width:4px;
+  height:22px;
+  border-radius:2px;
+  background:#ffe19a;
+  box-shadow:0 0 5px rgba(255,221,111,.75);
+  transform-origin:50% 101px;
+  transform:rotate(calc(var(--progress) * 360deg));
 }
 .extortion-circular-meter .ring-core{
   position:absolute;
-  inset:45px;
+  inset:23px;
   z-index:4;
   display:grid;
   place-items:center;
   align-content:center;
-  gap:3px;
+  gap:7px;
   border-radius:50%;
-  border:1px solid rgba(238,210,137,.3);
-  background:radial-gradient(circle at 42% 35%,#3d3528,#11100d 68%,#050505);
-  box-shadow:inset 0 0 24px rgba(0,0,0,.8),0 0 0 7px rgba(0,0,0,.42);
+  border:1px solid rgba(238,210,137,.2);
+  background:#11100d;
+  box-shadow:inset 0 0 20px rgba(0,0,0,.7),0 0 0 2px rgba(0,0,0,.65);
   pointer-events:none;
 }
 .extortion-circular-meter .ring-core b{
   color:#d9c69a;
   font-family:Georgia,serif;
-  font-size:48px;
+  font-size:82px;
   line-height:1;
   text-shadow:0 2px 0 #000;
 }
 .extortion-circular-meter .ring-core small{
   color:#f3df9d;
-  font-size:10px;
+  font-size:9px;
   font-weight:900;
   letter-spacing:.06em;
   text-transform:uppercase;
   text-align:center;
 }
 .extortion-circular-meter.charging{
-  animation:extortionHoldPulse .42s ease-in-out infinite alternate;
+  animation:none;
 }
-.extortion-circular-meter[data-band="white"]{box-shadow:inset 0 0 0 8px rgba(0,0,0,.34),0 0 28px rgba(255,244,202,.36),0 18px 42px rgba(0,0,0,.55)}
-.extortion-circular-meter[data-band="red"]{box-shadow:inset 0 0 0 8px rgba(0,0,0,.34),0 0 34px rgba(255,39,24,.38),0 18px 42px rgba(0,0,0,.55)}
+.extortion-circular-meter[data-band="white"]{outline:1px solid rgba(255,255,255,.38)}
+.extortion-circular-meter[data-band="black"]{outline:1px solid rgba(255,255,255,.55)}
+.extortion-circular-meter[data-band="red"]{outline:1px solid rgba(185,29,32,.55)}
+.extortion-hold-hint{
+  position:absolute;
+  z-index:6;
+  inset:0;
+  display:grid;
+  place-content:center;
+  gap:74px;
+  color:#fff1b8;
+  font-size:13px;
+  font-weight:1000;
+  letter-spacing:.2em;
+  text-shadow:0 2px 5px #000,0 0 10px rgba(255,202,55,.6);
+  pointer-events:none;
+  transition:opacity .2s ease,transform .25s ease;
+}
+.extortion-hold-hint em{font-size:8px;letter-spacing:.1em;font-style:normal;text-transform:uppercase}
+.extortion-circular-meter.engaged .extortion-hold-hint{opacity:0;transform:scale(1.08)}
+.extortion-chat.intro-playing .extortion-hold-hint{opacity:0}
+.extortion-demo-callouts{display:none;position:absolute;left:50%;top:220px;width:390px;height:50px;transform:translateX(-50%);text-align:center;pointer-events:none}
+.extortion-chat.full-intro .extortion-demo-callouts{display:block}
+.extortion-demo-callouts span{position:absolute;inset:0;display:grid;align-content:start;gap:3px;opacity:0;color:#d8ccb1;font-size:10px;line-height:1.4;letter-spacing:.04em;text-transform:uppercase}
+.extortion-demo-callouts b{color:#f2d68a;font-size:12px;letter-spacing:.08em}
+.extortion-chat.full-intro .extortion-demo-callouts .demo-red{animation:extortionCaption 1.65s ease .55s both}
+.extortion-chat.full-intro .extortion-demo-callouts .demo-gray{animation:extortionCaption 1.65s ease 2.35s both}
+.extortion-chat.full-intro .extortion-demo-callouts .demo-white{animation:extortionCaption 1.65s ease 4.15s both}
+.extortion-chat.full-intro .extortion-demo-callouts .demo-black{animation:extortionCaption 1.65s ease 5.95s both}
+.extortion-chat.full-intro .extortion-demo-callouts .demo-sweep{animation:extortionCaption 1.75s ease 7.85s both}
 .extortion-zone-legend{
   display:grid;
-  grid-template-columns:repeat(2,1fr);
+  grid-template-columns:repeat(4,1fr);
   gap:5px;
-  width:230px;
-  font-size:10px;
+  width:100%;
+  font-size:9px;
   font-weight:900;
   letter-spacing:.08em;
   text-transform:uppercase;
+  transition:opacity .45s ease .18s,transform .6s cubic-bezier(.2,.78,.2,1);
 }
+.extortion-chat.intro-playing .extortion-zone-legend{opacity:0;transform:translateY(5px)}
 .extortion-zone-legend span{
   border:1px solid rgba(214,182,92,.22);
-  background:#12100d;
-  padding:5px 6px;
-  text-align:center;
+  background:transparent;
+  padding:4px 5px;
+  display:grid;
+  grid-template-columns:7px auto;
+  align-items:center;
+  column-gap:6px;
 }
-.extortion-zone-legend .low{color:#cfc7b3}
-.extortion-zone-legend .standard{color:#aaa}
-.extortion-zone-legend .best{color:#fff0c2}
+.extortion-zone-legend span i{grid-row:1 / span 2;width:6px;height:16px;border:1px solid rgba(255,255,255,.25)}
+.extortion-zone-legend span b{font-size:9px;line-height:1}
+.extortion-zone-legend .normal{color:#bbb}
+.extortion-zone-legend .normal i{background:#aaa}
+.extortion-zone-legend .sweet{color:#fff2c9}
+.extortion-zone-legend .sweet i{background:#f5f2e9}
+.extortion-zone-legend .best{color:#fff}
+.extortion-zone-legend .best i{background:#050505}
 .extortion-zone-legend .fail{color:#ff796d}
-.extortion-actions{align-items:center}
+.extortion-zone-legend .fail i{background:#b91d20}
+.extortion-howto{display:grid;gap:7px;margin-bottom:10px}
+.extortion-howto p{margin:0;color:#a89b7e;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.extortion-result-summary{display:grid;gap:6px;margin-top:10px;padding:10px;border:1px solid #302b21;background:#100f0c}
+.extortion-result-summary>small{color:#9d854c;font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+.extortion-result-track{--result-progress:0;position:relative;height:15px;overflow:hidden;border:1px solid #050505;background:linear-gradient(90deg,#b91d20 0 33%,#aaa 33% 83%,#f5f2e9 83% 96%,#050505 96% 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.extortion-result-track i{position:absolute;inset:0 auto 0 0;width:calc(var(--result-progress) * 100%);background:rgba(238,190,58,.52);mix-blend-mode:screen;border-right:2px solid #ffe19a;box-shadow:2px 0 7px rgba(255,225,139,.75);transition:width .75s cubic-bezier(.18,.74,.22,1)}
+.extortion-result-track em{position:absolute;top:-2px;bottom:-2px;left:calc(var(--result-progress) * 100%);width:2px;background:#fff0bd;box-shadow:0 0 6px rgba(255,224,137,.9);transform:translateX(-1px);opacity:calc(var(--result-progress) * 1);transition:left .75s cubic-bezier(.18,.74,.22,1),opacity .2s ease}
+.extortion-result-label{font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#8e8674}
+.extortion-result-label.result-red{color:#ff746b}.extortion-result-label.result-gray{color:#c5c5c5}.extortion-result-label.result-white{color:#fff4d8}.extortion-result-label.result-black{color:#fff;text-shadow:0 0 8px rgba(255,255,255,.5)}
+.extortion-owner-message{margin:9px 0 0;padding:10px 12px;border:0;border-left:2px solid #765721;background:rgba(38,29,17,.55)}
+.extortion-owner-message small{display:block;color:#b89a52;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}
+.extortion-owner-message p{margin:0;color:#ddd0ad;font-family:Georgia,serif;font-size:13px;line-height:1.4}
+.extortion-actions{position:relative;z-index:0;align-items:center;transition:opacity .55s ease .15s,filter .55s ease .15s}
+.extortion-chat.intro-playing .extortion-actions{opacity:.08;filter:blur(1px);pointer-events:none}
 .extortion-actions button[data-action="extortionHold"]{
   user-select:none;
   min-width:132px;
@@ -966,3 +1057,35 @@
   from{filter:brightness(1)}
   to{filter:brightness(1.18)}
 }
+@property --demo-progress{syntax:'<number>';inherits:false;initial-value:0}
+@keyframes extortionDemoSweep{
+  0%{--demo-progress:0;opacity:0}
+  12%{opacity:1}
+  82%{--demo-progress:1;opacity:1}
+  100%{--demo-progress:1;opacity:0}
+}
+@keyframes extortionZoneFocus{
+  0%,100%{opacity:0;transform:scale(.99)}
+  18%,78%{opacity:1;transform:scale(1)}
+}
+@keyframes extortionCaption{
+  0%,100%{opacity:0;transform:translateY(5px)}
+  16%,82%{opacity:1;transform:translateY(0)}
+}
+
+/* Keep identity and money pinned while only navigation scrolls. */
+.app-side{display:flex!important;flex-direction:column;overflow:hidden!important}
+.app-side .player-sidebar-card,.app-side .side-status{position:relative;z-index:2;flex:0 0 auto;background-color:rgba(18,11,6,.82)}
+.app-side .side-nav{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#725523 transparent}
+.app-side .side-bottom-actions{flex:0 0 auto}
+.app-shell.sidebar-collapsed .app-side .player-sidebar-card{justify-content:center;min-height:74px;padding:30px 2px 6px}
+.app-shell.sidebar-collapsed .app-side .player-sidebar-card div{display:grid;opacity:1;transform:none;max-width:62px;width:62px;gap:1px;pointer-events:auto;text-align:center}
+.app-shell.sidebar-collapsed .app-side .player-sidebar-card strong{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#f0d889;font-size:10px;line-height:1.05;white-space:normal}
+.app-shell.sidebar-collapsed .app-side .player-sidebar-card small{font-size:7px;line-height:1.1;letter-spacing:.04em}.app-shell.sidebar-collapsed .app-side .player-sidebar-card em{overflow:hidden;text-overflow:ellipsis;font-size:8px;line-height:1.1;white-space:nowrap}
+.app-shell.sidebar-collapsed .app-side .side-status{display:grid!important;opacity:1;max-height:126px;padding:4px!important;margin:0 0 7px!important;overflow:hidden;transform:none;pointer-events:auto}
+.app-shell.sidebar-collapsed .app-side .cash-pair{grid-template-columns:1fr;gap:3px}.app-shell.sidebar-collapsed .app-side .cash-pair span{min-width:0;padding:4px 2px;text-align:center}.app-shell.sidebar-collapsed .app-side .cash-pair small{display:block;font-size:7px;line-height:1}.app-shell.sidebar-collapsed .app-side .cash-pair b{overflow:hidden;text-overflow:ellipsis;font-size:10px;line-height:1.1;white-space:nowrap}
+.app-shell.sidebar-collapsed .app-side .side-status .rank-strip{display:none}
+.app-side{overflow:visible!important}.app-side .side-nav{align-content:start;grid-auto-rows:max-content}.app-side .sidebar-toggle{display:grid!important;position:absolute!important;right:-24px!important;top:50%!important;z-index:120!important;flex:none!important;visibility:visible!important;opacity:1!important}
+.app-side .side-nav .nav-icon{min-width:34px;width:34px;height:30px;font-size:17px}.app-shell.sidebar-collapsed .app-side .side-nav .nav-icon{min-width:34px;width:34px;height:30px;font-size:16px}.app-shell.sidebar-collapsed .app-side .side-nav button{min-height:42px;padding:6px!important}
+.app-shell.sidebar-collapsed .app-side .player-sidebar-card{min-height:96px;padding:30px 3px 9px}.app-shell.sidebar-collapsed .app-side .player-sidebar-card div{max-width:66px;width:66px;gap:3px}.app-shell.sidebar-collapsed .app-side .player-sidebar-card strong{font-size:12px;line-height:1.12}.app-shell.sidebar-collapsed .app-side .player-sidebar-card small{font-size:8px}.app-shell.sidebar-collapsed .app-side .player-sidebar-card em{font-size:10px;color:#f3e4bd}
+.app-shell.sidebar-collapsed .app-side .side-status{max-height:144px;padding:6px!important;margin-bottom:9px!important}.app-shell.sidebar-collapsed .app-side .cash-pair{gap:5px}.app-shell.sidebar-collapsed .app-side .cash-pair span{padding:6px 3px}.app-shell.sidebar-collapsed .app-side .cash-pair small{font-size:8px}.app-shell.sidebar-collapsed .app-side .cash-pair b{font-size:12px;color:#f1d27d}

@@ -2724,14 +2724,14 @@ function setBuildingOperationalState(parcelOrId,status,reason){
   return true;
 }
 function intelForParcel(id){var all=ensureBuildingIntel();if(!all[id])all[id]={observedMinutes:0,appraisedAtDay:-999,appraisalDue:null,appraisedValue:null};return all[id];}
-function scoutingPhase(minutes){if(minutes>=10080)return 3;if(minutes>=4320)return 2;if(minutes>=1440)return 1;return 0;}
-function scoutingAccuracy(minutes){return clamp(.25+(Math.min(minutes,10080)/10080)*.62,0,.87);}
+function scoutingPhase(minutes){if(minutes>=1440)return 3;if(minutes>=720)return 2;if(minutes>=360)return 1;return 0;}
+function scoutingAccuracy(minutes){return clamp(.25+(Math.min(minutes,1440)/1440)*.62,0,.87);}
 function approximateValue(value,id,minutes){var rand=seeded('approx-value-'+id+'-'+Math.floor((minutes||0)/1440)),accuracy=scoutingAccuracy(minutes||0),spread=(1-accuracy)*.55,mod=1+(rand()-.5)*2*spread;return round1930PropertyValue((Number(value)||0)*mod);}
 function appraisalFresh(intel){return intel&&intel.appraisedAtDay!==undefined&&(state.day-intel.appraisedAtDay)<365&&intel.appraisedValue;}
 function startBuildingAppraisal(p){
   if(!p)return;
   var intel=intelForParcel(p.id);
-  if(!p.isPlayerSafehouse&&(intel.observedMinutes||0)<10080){state.stopReason='Fully scout this building before hiring a real estate appraiser.';refreshLiveTimeUI(true);return;}
+  if(!p.isPlayerSafehouse&&(intel.observedMinutes||0)<1440){state.stopReason='Scout this building for 24 hours before hiring a real estate appraiser.';refreshLiveTimeUI(true);return;}
   if(appraisalFresh(intel)){state.stopReason='This building has a fresh appraisal on file.';refreshLiveTimeUI(true);return;}
   if(intel.appraisalDue){state.stopReason='A real estate appraiser is already working on this building.';refreshLiveTimeUI(true);return;}
   if((state.clean||0)<200){state.stopReason='You need $200 clean cash to hire a real estate appraiser.';refreshLiveTimeUI(true);return;}
@@ -2781,7 +2781,7 @@ function startPlayerMovementToParcel(p,after){
   var from=(state.playerLocation&&state.playerLocation.parcelId)||((safe||{}).parcel||{}).id;
   if(!from){state.stopReason='No starting location is assigned yet.';updateMountedDistrictTime();return;}
   if(from===p.id){
-    if(after&&after.type==='scout')startLocalAction('scout',p,10080,after,'Scouting');
+    if(after&&after.type==='scout')startLocalAction('scout',p,1440,after,'Scouting');
     else if(after&&after.type==='extort')startLocalAction('extort',p,30,after,'Extortion setup');
     else if(after&&after.type==='collect')startLocalAction('collect',p,20,after,'Collecting');
     else if(after&&after.type==='deliverCollection'){deliverCollectionToEstate();if(!startNextQueuedAction())pauseCommandTime('Collection delivered.');}
@@ -2798,7 +2798,7 @@ function startPlayerMovementToParcel(p,after){
 }
 function startScoutingParcel(p){
   if(!p)return;
-  if(state.playerLocation&&state.playerLocation.parcelId===p.id){startLocalAction('scout',p,10080,{type:'scout',parcelId:p.id,parcel:p},'Scouting');return;}
+  if(state.playerLocation&&state.playerLocation.parcelId===p.id){startLocalAction('scout',p,1440,{type:'scout',parcelId:p.id,parcel:p},'Scouting');return;}
   startPlayerMovementToParcel(p,{type:'scout',parcelId:p.id,parcel:p});
 }
 function completePlayerMovementArrival(){
@@ -2806,7 +2806,7 @@ function completePlayerMovementArrival(){
   var target=state.playerMovement.targetParcelId,after=state.playerMovement.after;
   state.playerLocation={districtId:state.playerMovement.districtId||state.selected,parcelId:target,label:state.playerMovement.label,time:'Day '+state.day+' '+state.time};
   state.playerMovement=null;
-  if(after&&after.type==='scout')startLocalAction('scout',after.parcel||{id:after.parcelId,label:'Building'},10080,after,'Scouting');
+  if(after&&after.type==='scout')startLocalAction('scout',after.parcel||{id:after.parcelId,label:'Building'},1440,after,'Scouting');
   if(after&&after.type==='extort'&&after.parcel)startLocalAction('extort',after.parcel,30,after,'Extortion setup');
   if(after&&after.type==='collect'&&after.parcel)startLocalAction('collect',after.parcel,20,after,'Collecting');
   if(after&&after.type==='deliverCollection')deliverCollectionToEstate();
@@ -2849,8 +2849,8 @@ function processPlayerTimedWork(minutes){
       if(state.playerAction.remainingMinutes<=0){var activityDone=state.playerAction.after||{},activityName=activityDone.action;state.playerAction=null;if(activityName==='sleep'&&window.DeskDonSafehouse3D&&window.DeskDonSafehouse3D.setSleepMode)window.DeskDonSafehouse3D.setSleepMode(false);applySafehouseActivityResult(activityName);if(activityDone.autonomous){setTimeout(runNextAutonomyActivity,40);}else pauseCommandTime(state.stopReason);}
     }else if(state.playerAction.type==='scout'){
       var scouting=intelForParcel(state.playerAction.parcelId);
-      scouting.observedMinutes=Math.min(10080,(scouting.observedMinutes||0)+minutes);
-      if(scouting.observedMinutes>=10080||state.playerAction.remainingMinutes<=0){state.stopReason='Scouting report completed.';state.playerAction=null;if(!startNextQueuedAction())pauseCommandTime('Scouting report completed.');}
+      scouting.observedMinutes=Math.min(1440,(scouting.observedMinutes||0)+minutes);
+      if(scouting.observedMinutes>=1440||state.playerAction.remainingMinutes<=0){state.stopReason='Scouting report completed.';state.playerAction=null;if(!startNextQueuedAction())pauseCommandTime('Scouting report completed.');}
     }else if(state.playerAction.remainingMinutes<=0){
       var done=state.playerAction.after||{},parcel=done.parcel||state.selected3dParcel;
       state.playerAction=null;
@@ -2927,41 +2927,51 @@ function startExtortionEncounter(p){
 }
 function openExtortionQte(p){
   setTimeSpeed(1);
-  state.extortionEncounter={parcelId:p.id,parcel:p,ownerMood:ownerThresholdFor(p),attempts:0,triesLeft:1,lastResult:'',feedback:'Hold pressure, then release inside the white band for the best protection payment. One try only.',startedAt:Date.now(),active:true,charging:false,chargeStartedAt:0,chargeDurationMs:2300,chargeProgress:0,releaseProgress:0};
+  var startedAt=Date.now(),firstTutorial=!state.extortionTutorialSeen,introDuration=firstTutorial?10000:900;
+  state.extortionTutorialSeen=true;
+  state.extortionEncounter={parcelId:p.id,parcel:p,ownerMood:ownerThresholdFor(p),attempts:0,triesLeft:1,lastResult:'',feedback:firstTutorial?'Watch each outcome, then study the sample sweep.':'Quick refresher — watch the pressure sweep.',startedAt:startedAt,active:true,introPlaying:true,introMode:firstTutorial?'full':'quick',charging:false,chargeStartedAt:0,chargeDurationMs:700,chargeProgress:0,releaseProgress:0};
+  setTimeout(function(){var e=state.extortionEncounter;if(!e||e.startedAt!==startedAt||e.finished)return;e.introPlaying=false;e.feedback='Your turn. Hold and release once; later revolutions cap at 1.25× speed.';var root=document.getElementById('extortion-live-root'),chat=root&&root.querySelector('.extortion-chat'),meter=root&&root.querySelector('.extortion-circular-meter'),feedback=root&&root.querySelector('.extortion-feedback');if(!chat||!meter){refreshExtortionModal();return;}chat.classList.remove('intro-playing','full-intro','quick-intro');meter.classList.remove('demonstrating');meter.disabled=false;if(feedback)feedback.textContent=e.feedback;paintExtortionCharge();},introDuration);
 }
 var extortionChargeFrame=0;
 function extortionChargeProgress(e){
   if(!e)return 0;
-  if(e.finished)return clamp(Number(e.releaseProgress||e.chargeProgress)||0,0,1);
+  if(e.finished)return Math.max(0,Number(e.releaseProgress||e.chargeProgress)||0);
   if(e.charging&&e.chargeStartedAt){
-    return clamp((Date.now()-e.chargeStartedAt)/Math.max(500,Number(e.chargeDurationMs)||2300),0,1);
+    var base=Math.max(500,Number(e.chargeDurationMs)||700),elapsed=Math.max(0,Date.now()-e.chargeStartedAt);
+    for(var revolution=0;revolution<2;revolution++){var speed=Math.min(1.25,1+revolution*.25),duration=base/speed;if(elapsed<duration)return revolution+elapsed/duration;elapsed-=duration;}
+    return 2+elapsed/(base/1.25);
   }
-  return clamp(Number(e.chargeProgress)||0,0,1);
+  return Math.max(0,Number(e.chargeProgress)||0);
 }
+function extortionVisualProgress(progress){progress=Math.max(0,Number(progress)||0);return progress-Math.floor(progress);}
+function extortionLoopSpeed(progress){progress=Math.max(0,Number(progress)||0);return Math.min(1.25,1+Math.floor(progress)*.25);}
 function extortionBand(progress){
-  progress=clamp(Number(progress)||0,0,1);
-  if(progress>=.9)return{success:false,result:'red',mood:'Furious',label:'No deal',feedback:'You pushed too far. The owner snaps and the protection deal collapses.'};
-  if(progress>=.74)return{success:true,result:'white',mood:'Broken',label:'Sweet spot',feedback:'Perfect pressure. The owner folds and agrees to an inflated protection payment.'};
-  if(progress>=.45)return{success:true,result:'gray',mood:'Extorted',label:'Standard deal',feedback:'Steady pressure. The owner accepts standard protection.'};
-  return{success:true,result:'lightgray',mood:'Lowballed',label:'Lowballed',feedback:'Too soft. The owner agrees, but only at a low weekly payment.'};
+  progress=Math.max(0,Number(progress)||0);
+  var visual=extortionVisualProgress(progress),loops=Math.floor(progress);
+  if(visual<.33)return{success:false,protected:false,result:'red',mood:'Defiant',label:loops?'Overshot - no deal':'No deal',feedback:loops?'You passed the black band and released in red on revolution '+(loops+1)+'. The owner refuses everything.':'You released before applying enough pressure. The owner refuses the deal.'};
+  if(visual<.83)return{success:true,protected:false,oneTime:true,result:'gray',mood:'Wary',label:'Simple payoff',feedback:'The owner pays a small one-time cut to get you out of the room, but refuses weekly protection.'};
+  if(visual<.96)return{success:true,protected:true,weeklyMultiplier:1.2,result:'white',mood:'Extorted',label:'Sweet deal +20%',feedback:'The owner accepts protection and a weekly tribute worth 20% more than the base demand.'};
+  return{success:true,protected:true,weeklyMultiplier:1.5,result:'black',mood:'Terrified',label:'Best deal +50%',feedback:'You stopped on the knife edge. The terrified owner accepts protection at 50% above the base weekly tribute.'};
 }
 function paintExtortionCharge(){
   var e=state.extortionEncounter,meter=document.querySelector('.extortion-circular-meter'),readout=document.querySelector('[data-extortion-readout]');
   if(!e||!meter)return;
-  var p=extortionChargeProgress(e),band=extortionBand(p);
-  meter.style.setProperty('--progress',p.toFixed(4));
+  var p=extortionChargeProgress(e),visual=extortionVisualProgress(p),band=extortionBand(p);
+  meter.style.setProperty('--progress',visual.toFixed(4));
   meter.classList.toggle('charging',!!e.charging&&!e.finished);
+  meter.classList.toggle('engaged',p>0||!!e.charging||!!e.finished);
   meter.setAttribute('data-band',band.result);
-  if(readout)readout.textContent=Math.round(p*100)+'% - '+band.label;
+  if(readout)readout.textContent=e.introPlaying?(e.introMode==='quick'?'Quick refresher':'Outcome briefing'):!e.charging&&!e.finished&&p===0?'Hold to start':'Pass '+(Math.floor(p)+1)+' · '+extortionLoopSpeed(p)+'× · '+band.label;
   if(e.charging&&!e.finished)extortionChargeFrame=requestAnimationFrame(paintExtortionCharge);
   else extortionChargeFrame=0;
 }
 function startExtortionCharge(){
   var e=state.extortionEncounter;
-  if(!e||!e.active||e.finished||e.charging)return;
+  if(!e||!e.active||e.finished||e.charging||e.introPlaying)return;
   e.charging=true;
-  e.chargeStartedAt=Date.now()-extortionChargeProgress(e)*Math.max(500,Number(e.chargeDurationMs)||2300);
-  e.feedback='Hold... release in white for the best payment, gray for standard, light gray for lowball. Red kills the deal.';
+  e.chargeStartedAt=Date.now();
+  e.chargeProgress=0;
+  e.feedback='Keep holding clockwise. Later circles run at the capped 1.25× speed.';
   paintExtortionCharge();
 }
 function releaseExtortionCharge(){
@@ -2978,24 +2988,35 @@ function resolveExtortionQte(progress){
   if(e.finished){state.extortionEncounter=null;refreshExtortionModal();if(state.pendingDistrictRefresh){state.pendingDistrictRefresh=false;updateMountedRacketVisuals();refreshLiveTimeUI(true);}else refreshLiveTimeUI(true);return;}
   var band=extortionBand(progress==null?extortionChargeProgress(e):progress);
   e.ownerMood=band.mood;e.lastResult=band.result;e.attempts=1;e.triesLeft=0;e.feedback=band.feedback;e.releaseProgress=progress==null?extortionChargeProgress(e):progress;
-  finishExtortion(!!band.success,band.mood,band.result);return;
+  finishExtortion(!!band.success,band.mood,band.result,band);return;
   refreshExtortionModal();
 }
-function finishExtortion(success,mood,result){
+function finishExtortion(success,mood,result,outcome){
   var e=state.extortionEncounter;if(!e)return;
   if(!state.extortionState)state.extortionState={};
   if(!state.protectedBusinesses)state.protectedBusinesses={};
-  if(success){
-    var p=e.parcel,base=Math.max(10,Math.round((p.propertyValue||1000)*.004)),mult=mood==='Broken'?1.3:mood==='Extorted'?1:mood==='Lowballed'?.7:1;
-    state.extortionState[p.id]={mood:mood,weeklyDue:Math.round(base*mult),lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8,result:result};
-    state.protectedBusinesses[p.id]={family:'player',color:'#ff1d1d',weeklyDue:Math.round(base*mult),lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8};
+  outcome=outcome||extortionBand(e.releaseProgress||e.chargeProgress);
+  var p=e.parcel,base=Math.max(10,Math.round((p.propertyValue||1000)*.004));
+  if(success&&outcome.protected){
+    var mult=Number(outcome.weeklyMultiplier)||(result==='black'?1.5:1.2),weekly=Math.round(base*mult);
+    state.extortionState[p.id]={mood:mood,weeklyDue:weekly,lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8,result:result,protected:true};
+    state.protectedBusinesses[p.id]={family:'player',color:'#ff1d1d',weeklyDue:weekly,lastCollectedDay:state.day,collectorCut:.2,mafiaCut:.8,result:result};
     state.pendingDistrictRefresh=true;
-    state.stopReason='Protection racket established: '+mood+'. Weekly due $'+money(Math.round(base*mult))+'.';
-    e.feedback='Protection racket established: '+mood+'. Weekly due $'+money(Math.round(base*mult))+'. Collectors keep 20%; the family receives 80%.';
+    state.stopReason='Protection racket established: '+mood+'. Weekly due $'+money(weekly)+'.';
+    e.feedback=(result==='black'?'Best possible deal. ':'Sweet deal. ')+'Protection established at $'+money(weekly)+' per week. Collectors keep 20%; the family receives 80%.';
+    e.protectionEstablished=true;
+  }else if(success&&outcome.oneTime){
+    var oneTime=Math.max(3,base);
+    state.dirty=Math.max(0,Math.round((state.dirty||0)+oneTime));
+    state.extortionState[p.id]={mood:mood,oneTimePaid:oneTime,paidAtDay:state.day,result:result,protected:false};
+    state.stopReason='The owner paid a one-time cut of $'+money(oneTime)+', but no protection racket was established.';
+    e.feedback='Simple payoff: $'+money(oneTime)+' dirty cash received once. The building does not join mafia territory and owes no Sunday envelope.';
+    e.protectionEstablished=false;
   }else{
     state.extortionState[e.parcelId]={mood:mood,failedAtDay:state.day,result:result};
-    state.stopReason='Extortion failed. Owner is furious.';
-    e.feedback='Extortion failed. The owner is furious and will not pay protection this time.';
+    state.stopReason='Extortion failed. No deal and no money.';
+    e.feedback='No deal. The owner pays nothing, the building remains outside mafia territory, and this attempt is over.';
+    e.protectionEstablished=false;
   }
   e.finished=true;
   e.success=!!success;
@@ -3007,10 +3028,18 @@ function finishExtortion(success,mood,result){
   refreshLiveTimeUI(true);
   if(state.selected3dParcel)renderSelectedBuildingDossier(state.selected3dParcel);
 }
+function extortionOwnerMessage(e){
+  if(!e||!e.finished)return'You come into my place with that look? Say what you came to say, and make it quick.';
+  if(e.lastResult==='red')return'No. You pushed too far. Get out of my business before I call somebody.';
+  if(e.lastResult==='gray')return'Take this, leave me alone, and do not come back expecting another envelope.';
+  if(e.lastResult==='white')return'Fine. You will have an envelope waiting every Sunday. Just keep trouble away from my door.';
+  if(e.lastResult==='black')return'All right—whatever you want. The envelope will be ready. Please, just leave my family out of this.';
+  return'Say what you came to say.';
+}
 function extortionModalView(){
   var e=state.extortionEncounter;if(!e||!e.active)return'';
-  var result=e.lastResult?'<b class="result-'+esc(e.lastResult)+'">'+esc((extortionBand(e.releaseProgress||e.chargeProgress).label||e.lastResult).toUpperCase())+'</b>':'<b>Hold to pressure</b>',progress=extortionChargeProgress(e),band=extortionBand(progress);
-  return '<div class="extortion-modal"><div class="extortion-chat '+(e.finished?'finished':'')+'"><section><small>Protection Racket</small><h3>'+esc((e.parcel&&e.parcel.label)||'Business Owner')+'</h3><div class="extortion-status"><span>Owner state <b>'+esc(e.ownerMood||'Neutral')+'</b></span><span>Tries left <b>'+esc(e.triesLeft===undefined?1:e.triesLeft)+'</b></span><span>Result '+result+'</span></div><p class="extortion-feedback">'+esc(e.feedback||'Hold, then release before you overshoot into red.')+'</p><p class="muted">Hold mouse or Space to fill clockwise from the top. Light gray is lowball, gray is standard, white is best, red cancels the deal.</p></section><div class="extortion-circular-wrap"><button class="extortion-circular-meter '+(e.charging?'charging':'')+'" data-action="extortionHold" data-band="'+esc(band.result)+'" style="--progress:'+progress.toFixed(4)+'" '+(e.finished?'disabled':'')+'><span class="ring-zones"></span><span class="ring-fill"></span><span class="ring-core"><b>$</b><small data-extortion-readout>'+Math.round(progress*100)+'% - '+esc(band.label)+'</small></span></button><div class="extortion-zone-legend"><span class="low">Lowball</span><span class="standard">Standard</span><span class="best">Best</span><span class="fail">No deal</span></div></div><div class="extortion-actions"><button class="primary" data-action="'+(e.finished?'cancelExtortion':'extortionHold')+'">'+(e.finished?'Close':'Hold pressure')+'</button><button data-action="cancelExtortion">'+(e.finished?'Done':'Walk away')+'</button></div></div></div>';
+  var result=e.lastResult?'<b class="result-'+esc(e.lastResult)+'">'+esc((extortionBand(e.releaseProgress||e.chargeProgress).label||e.lastResult).toUpperCase())+'</b>':'<b>Pending</b>',progress=extortionChargeProgress(e),visual=extortionVisualProgress(progress),band=extortionBand(progress),resultTarget=e.finished?visual:0;
+  return '<div class="extortion-modal"><div class="extortion-chat '+(e.finished?'finished ':'')+(e.introPlaying?'intro-playing '+(e.introMode==='quick'?'quick-intro':'full-intro'):'')+'"><div class="extortion-circular-wrap"><button class="extortion-circular-meter '+(e.charging?'charging ':'')+(progress>0||e.finished?'engaged ':'')+(e.introPlaying?'demonstrating':'')+'" data-action="extortionHold" data-band="'+esc(band.result)+'" style="--progress:'+visual.toFixed(4)+'" '+(e.finished||e.introPlaying?'disabled':'')+'><span class="ring-zones"></span><span class="ring-intro intro-red"></span><span class="ring-intro intro-gray"></span><span class="ring-intro intro-white"></span><span class="ring-intro intro-black"></span><span class="ring-demo"></span><span class="ring-fill"></span><span class="ring-core"><b>$</b></span></button><div class="extortion-demo-callouts"><span class="demo-red"><b>RED — NO DEAL</b> No payment and no territory.</span><span class="demo-gray"><b>GRAY — SIMPLE PAYOFF</b> One small payment; no protection.</span><span class="demo-white"><b>WHITE — SWEET DEAL</b> Protection and +20% weekly tribute.</span><span class="demo-black"><b>BLACK — BEST DEAL</b> Protection and +50% weekly tribute.</span><span class="demo-sweep"><b>WATCH THE SWEEP</b> Later circles cap at 1.25&times; speed.</span></div></div><section><div class="extortion-heading"><small>Protection Racket</small><h3>'+esc((e.parcel&&e.parcel.label)||'Business Owner')+'</h3></div><div class="extortion-howto"><p>Hold mouse or Space. Release once.</p><div class="extortion-zone-legend"><span class="fail"><i></i><b>Red</b> No deal</span><span class="normal"><i></i><b>Gray</b> One-time</span><span class="sweet"><i></i><b>White</b> +20%</span><span class="best"><i></i><b>Black</b> +50%</span></div></div><div class="extortion-status"><span>Owner <b>'+esc(e.ownerMood||'Neutral')+'</b></span><span>Outcome '+result+'</span></div><p class="extortion-feedback">'+esc(e.feedback||'Hold, then release before you overshoot into red.')+'</p><div class="extortion-result-summary"><small>Pressure result</small><div class="extortion-result-track" data-result-progress="'+resultTarget.toFixed(4)+'" style="--result-progress:0"><i></i><em></em></div><div class="extortion-result-label result-'+esc(e.finished?e.lastResult:'pending')+'">'+esc(e.finished?band.label:'Awaiting release')+'</div></div><blockquote class="extortion-owner-message"><small>Owner</small><p>“'+esc(extortionOwnerMessage(e))+'”</p></blockquote></section><div class="extortion-actions"><button data-action="cancelExtortion">'+(e.finished?'Close':'Walk away')+'</button></div></div></div>';
 }
 function refreshExtortionModal(){
   var root=document.getElementById('extortion-live-root');
@@ -3020,6 +3049,7 @@ function refreshExtortionModal(){
   if(!root){root=document.createElement('div');root.id='extortion-live-root';document.body.appendChild(root);}
   root.innerHTML=html;
   paintExtortionCharge();
+  var resultBar=root.querySelector('.extortion-result-track');if(resultBar){var target=Number(resultBar.getAttribute('data-result-progress'))||0;requestAnimationFrame(function(){requestAnimationFrame(function(){if(resultBar.isConnected)resultBar.style.setProperty('--result-progress',target.toFixed(4));});});}
 }
 document.addEventListener('pointerdown',function(e){
   var trigger=e.target.closest&&e.target.closest('[data-action="extortionHold"],.extortion-circular-meter');
@@ -3119,7 +3149,7 @@ function buildingInformationPanel(d,p){
   var inactiveNotice=opState.active?'':'<section class="building-info-section inactive-building-info"><h4>Building inactive</h4><p class="muted">This building is currently inaccessible and cannot run normal actions until another system reactivates it.</p></section>';
   var estateActions=isEstate?'<section class="building-info-section estate-entry"><h4>Estate access</h4><p>The compound can become its own management surface as upgrades and household systems come online.</p><button class="primary inline" data-action="enterEstate">Enter Estate</button></section>':'';
   var safehouseAccess='';
-  var scoutPct=clamp(observed/10080,0,1),scoutPercent=Math.round(scoutPct*100);
+  var scoutPct=clamp(observed/1440,0,1),scoutPercent=Math.round(scoutPct*100);
   var activeScout=state.playerAction&&state.playerAction.type==='scout'&&state.playerAction.parcelId===p.id;
   var phaseName=phase===0?'Unscouted':phase===1?'Structure revealed':phase===2?'Usage revealed':'Full report';
   var scouting=fullAccess?'':'<section class="building-scout-strip"><div><small>Scouting report</small><b>'+esc(phaseName)+'</b></div><div class="scout-progress-bar"><span style="width:'+scoutPercent+'%"></span></div><span class="scout-percent">'+scoutPercent+'%</span><p>'+fmtMetric(Math.floor(observed/60),' hours observed')+' / '+(activeScout?'Active observation':'Character presence required')+'</p></section>';
@@ -3152,7 +3182,7 @@ function buildingInformationPanel(d,p){
   }
   var activeTab=state.buildingInfoTab||'structural';if(['structural','usage','valuation'].indexOf(activeTab)<0)activeTab='structural';
   var tabs='<div class="building-info-tabs"><button data-action="buildingInfoTab" data-tab="structural" class="'+(activeTab==='structural'?'active':'')+'">Structure</button><button data-action="buildingInfoTab" data-tab="usage" class="'+(activeTab==='usage'?'active':'')+'">Usage</button><button data-action="buildingInfoTab" data-tab="valuation" class="'+(activeTab==='valuation'?'active':'')+'">Valuation</button></div>';
-  var tabContent=activeTab==='structural'?(displayPhase>=1?structural:lockedSection('Structural information','Scout for one day to reveal structural measurements.')):activeTab==='usage'?(displayPhase>=2?usage:lockedSection('Usage information','Scout for three days to reveal storage and personnel limits.')):(displayPhase>=3?valuation:lockedSection('Valuation information','Complete seven days of scouting to unlock valuation and the real estate appraiser.'));
+  var tabContent=activeTab==='structural'?(displayPhase>=1?structural:lockedSection('Structural information','Scout for 6 hours to reveal structural measurements.')):activeTab==='usage'?(displayPhase>=2?usage:lockedSection('Usage information','Scout for 12 hours to reveal storage and personnel limits.')):(displayPhase>=3?valuation:lockedSection('Valuation information','Complete 24 hours of scouting to unlock valuation and the real estate appraiser.'));
   return identity+inactiveNotice+estateActions+safehouseAccess+scouting+tabs+tabContent;
 }
 function estateActivitiesPanel(p){
@@ -3263,6 +3293,14 @@ function selectParcelById(parcelId,parcelData){
     updateMountedDistrictTime();
   }
 }
+function clearSelectedBuilding(){
+  state.selectedBlock='';
+  state.selectedParcel='';
+  state.selected3dParcel=null;
+  state.contextParcel=null;
+  closeBuildingContextMenu();
+  refreshDistrictDossier();
+}
 function closeBuildingContextMenu(){var old=document.getElementById('building-context-menu');if(old)old.remove();}
 function showSafehouseObjectContextMenu(object,x,y){
   closeBuildingContextMenu();var menu=document.createElement('div'),labels={eat:'Eat · $1',cook:'Cook food · $2',snack:'Have a snack · $1',sleep:'Sleep',rest:'Rest',wash:'Wash up',bathe:'Bathe',groom:'Freshen up',toilet:'Use toilet',relax:'Enjoy the music',leave:'Leave Safehouse'},actions=[object.action||'rest'];if(object.secondaryAction)actions.push(object.secondaryAction);if(actions.indexOf('radioToggle')>=0)labels.radioToggle=window.DeskDonSafehouse3D&&window.DeskDonSafehouse3D.isRadioPlaying&&window.DeskDonSafehouse3D.isRadioPlaying()?'Turn Radio Off':'Turn Radio On';
@@ -3369,6 +3407,7 @@ function mountDistrict3dIfNeeded(force){
       var target=e.detail;
       if(target)selectParcelById(target.id||target.parcelId||'selected-building',target);
     });
+    root.addEventListener('deskdon-building-deselected',function(){clearSelectedBuilding();});
     root.addEventListener('deskdon-building-context',function(e){
       e.preventDefault();
       e.stopPropagation();
@@ -4019,11 +4058,13 @@ function restoreCachedDistrict3dRoot(){
   return true;
 }
 function renderModernShell(){
-  ensureTimeState();ensureNarratorState();ensureEventFrameworkState();
+  ensureTimeState();var narrator=ensureNarratorState();ensureEventFrameworkState();
+  state.choiceEventsDisabled=true;
+  if(state.choiceEventsDisabled){narrator.activeEvent=null;narrator.eventQueue=[];}
   state.tab=normalizeTab(state.tab);
   if(state.tab==='Family'&&typeof ensureFamilyPhase2==='function')ensureFamilyPhase2();
   parkDistrict3dRootForRender();
-  var modal=eventModalView()+extortionModalView(),timeDrawer=timeDrawerView(),collapsed=state.sidebarCollapsed!==false,mainMap=(state.tab==='Dashboard'||state.tab==='City');
+  var modal=extortionModalView(),timeDrawer=timeDrawerView(),collapsed=state.sidebarCollapsed!==false,mainMap=(state.tab==='Dashboard'||state.tab==='City');
   var side='<aside class="side app-side"><button class="sidebar-toggle" data-action="toggleSidebar" title="'+(collapsed?'Expand sidebar':'Collapse sidebar')+'">'+(collapsed?'&rsaquo;':'&lsaquo;')+'</button>'+playerSidebarHeader()+sideStatusView()+sideNavView()+'<div class="side-bottom-actions"><button data-action="jumpPlayerSafehouse"><span class="nav-icon" aria-hidden="true">&#8962;</span><span>Move to Safehouse</span></button></div></aside>';
   var stop=(!mainMap&&state.stopReason)?'<div class="stop"><strong>Simulation:</strong> '+esc(state.stopReason)+'</div>':'';
   document.getElementById('app').innerHTML='<div class="shell app-shell '+(collapsed?'sidebar-collapsed':'sidebar-expanded')+' '+(mainMap?'map-shell':'')+'">'+timeDrawer+side+'<main class="main '+(mainMap?'map-main':'')+'">'+stop+content()+'</main></div>'+modal;

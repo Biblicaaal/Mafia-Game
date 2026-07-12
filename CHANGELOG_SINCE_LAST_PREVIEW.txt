@@ -1,0 +1,176 @@
+DESK DON - CHANGES SINCE LAST PREVIEW BASELINE
+================================================
+
+Created: July 12, 2026
+Baseline commit: 3868769 - integrate protection orders and extortion meter
+Scope: Current uncommitted workspace changes after that baseline.
+
+
+1. EXTORTION MINIGAME
+---------------------
+- Rebuilt the old vertical timing interaction as a circular clockwise pressure meter.
+- Added hold-and-release mouse and Space controls with one attempt per interaction.
+- Added continuous extra revolutions instead of stopping when the player overshoots.
+- Later revolutions increase speed gradually, capped at 1.25x.
+- Final meter outcome areas:
+  - Red: no deal, no money, and no protection.
+  - Gray: one-time dirty-cash payoff, but no protection or territory.
+  - White: protection established with a 20% weekly tribute bonus.
+  - Black: best result, protection established with a 50% weekly tribute bonus.
+- Added a longer first-time tutorial presentation and a shorter repeat refresher.
+- Added animated zone explanations and a sample sweep before player control begins.
+- Simplified and reorganized the minigame layout.
+- Enlarged the central dollar symbol and removed unnecessary meter text.
+- Added a horizontal result bar mirroring the circular outcome zones.
+- Added contextual owner dialogue for pending, failed, gray, white, and black outcomes.
+- Removed the attempt counter and redundant Hold Pressure button.
+- Added polished result, tutorial, owner-message, and meter animations.
+
+
+2. PROTECTION / EXTORTION ORDERS
+--------------------------------
+- Street Punks can no longer freely extort arbitrary buildings.
+- Street Punk extortion is restricted to the target of an active Soldier-issued order.
+- Added repeatable Collect Protection orders for eligible expandable territory buildings.
+- Protection-order frequency is limited to a randomized one or two orders per week.
+- Prevented overlapping active integrated orders.
+- The target building is highlighted and tracked by the Active Order HUD.
+- Successful protection requires returning to the Family Estate to report.
+- Estate report actions now automatically route the player to the Estate when necessary.
+- Reporting completes automatically after the player physically arrives.
+- Mission rewards, XP, standing, superior trust, career records, and memories update on completion.
+- Failed, refused, expired, active, and completed order states are retained on the original order.
+
+
+3. NEW SCOUT LOCATION MISSION
+-----------------------------
+- Added a repeatable Soldier-issued Scout Location order for Street Punks.
+- Missions select an active, valid building in the safehouse city area.
+- Required observation duration is randomly selected from 6, 12, or 24 hours.
+- Mission rewards scale with the required observation duration.
+- Orders include acceptance and completion deadlines.
+- The target building receives a mission highlight and Jump to Location support.
+- The player must physically travel to the building and start Scout from its context menu.
+- Scouting runs as a timed live-world action and updates the Active Order HUD.
+- On completion, the mission changes to the return-and-report stage without creating Inbox spam.
+- Route to Estate automatically walks the player there and files the report on arrival.
+- Completion grants dirty cash, XP, standing, superior trust, career progress, and a memory.
+- Mission generation is checked during moving-time ticks so new work can interrupt simulation.
+
+
+4. BUILDING SCOUTING THRESHOLDS
+-------------------------------
+- Reduced normal building scouting thresholds to:
+  - Structure information: 6 hours.
+  - Usage information: 12 hours.
+  - Valuation/full report: 24 hours.
+- Updated scouting progress calculations and completion caps to 24 hours.
+- Updated appraisal requirements and locked-tab instructions to use the new thresholds.
+- Building intelligence gained during Scout Location missions contributes to normal scouting progress.
+
+
+5. INBOX AND ORDER COMMUNICATION
+--------------------------------
+- Read messages are dimmed and desaturated.
+- Unread messages retain their warm color, shine, and stronger text hierarchy.
+- Selected messages remain bright and receive a strong yellow outline even after being read.
+- Read order messages stay brighter than ordinary read correspondence.
+- Added order-state symbols:
+  - Yellow ! for unaccepted orders.
+  - Yellow rotating-arrow symbol for accepted/in-progress orders.
+  - Red X for failed, refused, or expired orders.
+  - Muted check mark for completed orders.
+- Active orders retain an unread-like bright appearance until completed.
+- Failed missions automatically become read.
+- Incoming order messages pause the simulation and select the new Inbox entry.
+- Only newly issued orders move the player toward Inbox.
+- Mission-stage updates no longer create additional Inbox messages.
+- Target sighted, return to report, protection established, scouting complete, report accepted,
+  report rejected, and similar mission-stage correspondence is suppressed.
+- Existing obsolete mission-stage messages are removed from the Inbox.
+- Mission instructions and stage changes now remain in the live Active Order panel.
+
+
+6. NEW ORDER DELIVERY PRESENTATION
+----------------------------------
+- Added a full-screen New Order presentation when an order arrives.
+- Time and its active timer stop immediately before the presentation.
+- The current game view dims and lightly blurs behind the presentation.
+- Added an animated red New Order ribbon.
+- Added a period-styled envelope wrapped with red ribbon and a red Moretti wax seal.
+- The presentation remains on screen until the player clicks the envelope.
+- Hovering the envelope opens the flap and slides a white Family Order paper upward.
+- Moving the pointer away retracts the paper into the envelope.
+- Clicking the envelope smoothly dismisses the presentation and opens the selected order in Inbox.
+- Keyboard Enter and Space activation are supported when the envelope is focused.
+
+
+7. ACTIVE ORDER HUD AND ESTATE REPORTING
+----------------------------------------
+- Repositioned the Active Order HUD so the expanded sidebar no longer covers it.
+- Added smooth horizontal movement when the sidebar expands or collapses.
+- Added Scout Location phases, duration, target, reward, and progress to the HUD.
+- Mission-stage instructions now update directly in the HUD.
+- Added Estate routing for Follow Someone, Collect Protection, and Scout Location reports.
+- Added Jump to Location support for Scout Location targets and the Estate report stage.
+
+
+8. SIDEBAR
+-----------
+- Kept the character identity and finance area fixed while navigation scrolls independently.
+- Character name, age, rank, clean cash, and dirty cash remain visible in collapsed mode.
+- Added a more readable compact collapsed layout for the identity and money area.
+- Restored the original navigation icon proportions after the fixed-layout pass enlarged them.
+- Prevented navigation grid rows from stretching vertically.
+- Restored the sidebar collapse/expand arrow by allowing it to render outside the sidebar edge.
+- Kept the collapse arrow fixed at the sidebar's right-center edge.
+
+
+9. CITY VIEW SELECTION CONTROLS
+-------------------------------
+- Clicking the currently selected building deselects it.
+- Clicking roads, empty city ground, or outside selectable building geometry deselects the building.
+- Middle mouse button deselects the current building.
+- Deselecting clears the selected parcel, context parcel, highlight, context menu, and information panel.
+
+
+10. CHOICE EVENTS
+-----------------
+- Temporarily disabled choice-event popups.
+- Active queued choice events are cleared from the modern shell while this feature is disabled.
+- The extortion modal remains available independently.
+
+
+11. FILES CHANGED
+-----------------
+- public/desk-don/app.js
+  Scouting thresholds, extortion interaction/results, building deselection bridge,
+  choice-event suppression, and related live UI behavior.
+
+- public/desk-don/street-prologue.js
+  Integrated protection/scouting missions, order generation, Inbox state handling,
+  Estate reporting, active HUD updates, order presentation, and mission-message suppression.
+
+- public/desk-don/street-prologue.css
+  Inbox read/order states, Active Order positioning, and animated order-envelope presentation.
+
+- public/desk-don/styles.css
+  Extortion UI redesign and fixed/compact sidebar refinements.
+
+- src/district3d.js
+  Empty-ground, repeated-building, and middle-mouse deselection behavior.
+
+
+12. VALIDATION COMPLETED
+------------------------
+- JavaScript syntax checks passed.
+- npm run architecture:check passed.
+- npm run build passed.
+- Preview at http://127.0.0.1:4175/ returned HTTP 200.
+
+
+CURRENT WORKSPACE SUMMARY
+-------------------------
+- 5 modified source files.
+- Approximately 393 inserted lines and 109 removed lines before this changelog was added.
+- These changes are currently uncommitted relative to baseline commit 3868769.

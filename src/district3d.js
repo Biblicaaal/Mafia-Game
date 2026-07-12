@@ -4510,6 +4510,14 @@ function mount(root, payload, onSelect) {
   function onPointerDown(e) {
     e.preventDefault();
     e.stopPropagation();
+    if (e.button === 1) {
+      selectedParcelId = null;
+      applyHighlight(null);
+      saveView();
+      root.dispatchEvent(new CustomEvent('deskdon-building-deselected', { detail: { reason: 'middle-button' }, bubbles: true }));
+      renderLoop();
+      return;
+    }
     setGlobal3dPointerActive(true);
     setDistrictHover(hoveredDistrictNav, false);
     hoveredDistrictNav = null;
@@ -4517,7 +4525,7 @@ function mount(root, payload, onSelect) {
     if (cameraMode === 'street' && document.pointerLockElement !== root) {
       root.requestPointerLock?.();
     }
-    if (e.button === 1 || e.button === 0 || e.button === 2) {
+    if (e.button === 0 || e.button === 2) {
       dragging = true;
       moved = false;
       dragMode = cameraMode === 'street' ? 'look' : estateFocus ? 'rotate' : e.button === 2 ? 'rotate' : 'pan';
@@ -4735,6 +4743,14 @@ function mount(root, payload, onSelect) {
       renderLoop();
       return;
     }
+    if (selectedParcel && selectedParcel.id === selectedParcelId) {
+      selectedParcelId = null;
+      applyHighlight(null);
+      saveView();
+      root.dispatchEvent(new CustomEvent('deskdon-building-deselected', { detail: { reason: 'same-building' }, bubbles: true }));
+      renderLoop();
+      return;
+    }
     if (selectedParcel && typeof onSelect === 'function') {
       selectedParcelId = selectedParcel.id;
       applyHighlight(selectedParcelId);
@@ -4748,7 +4764,13 @@ function mount(root, payload, onSelect) {
     const districtHit = raycaster.intersectObjects(districtTargets, true)[0];
     if (districtHit?.object?.userData?.districtNav) {
       animateDistrictNavigation(districtHit.object.userData.districtNav);
+      return;
     }
+    selectedParcelId = null;
+    applyHighlight(null);
+    saveView();
+    root.dispatchEvent(new CustomEvent('deskdon-building-deselected', { detail: { reason: 'ground' }, bubbles: true }));
+    renderLoop();
   }
 
   function parcelAtClientPoint(clientX, clientY) {
