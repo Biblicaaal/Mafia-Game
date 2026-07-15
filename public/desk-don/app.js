@@ -949,7 +949,7 @@ function layout(d){if(layouts[d.id]){enforceSingleSpecialBuildings();return layo
 var METRO_GRID_DISTRICT_ID='metro_core',METRO_GRID_ISLAND_ID='Metro Grid',METRO_GRID_COLS=12,METRO_GRID_ROWS=12;
 function metroGridBoundary(){return[{x:0,y:0},{x:1440,y:0},{x:1440,y:1080},{x:0,y:1080}];}
 function metroGridRoadKind(index,total){var middle=Math.floor(total/2);if(index===middle)return'avenue';if(index%4===0||index===3||index===9)return'collector';return'minor';}
-function metroRoad(id,kind,a,b,rand,width,name){return{id:id,path:'M '+a.x.toFixed(1)+' '+a.y.toFixed(1)+' L '+b.x.toFixed(1)+' '+b.y.toFixed(1),a:a,b:b,width:width||roadWidth(kind,rand),kind:kind,name:name||roadName(rand,kind)};}
+function metroRoad(id,kind,a,b,rand,width,name){var match=String(id||'').match(/^[vh](\d+)/),lineIndex=match?parseInt(match[1],10):0,oneWay=kind==='minor'&&lineIndex%3!==0,direction=oneWay?(lineIndex%2===0?'forward':'reverse'):'both',lanes=oneWay?1:2;return{id:id,path:'M '+a.x.toFixed(1)+' '+a.y.toFixed(1)+' L '+b.x.toFixed(1)+' '+b.y.toFixed(1),a:a,b:b,width:width||roadWidth(kind,rand),kind:kind,name:name||roadName(rand,kind),oneWay:oneWay,trafficDirection:direction,lanes:lanes};}
 function metroRect(minX,minY,maxX,maxY){return[{x:minX,y:minY},{x:maxX,y:minY},{x:maxX,y:maxY},{x:minX,y:maxY}];}
 function metroParcelizeBlock(blockPoly,blockId,d,rand,spanX,spanY){
   var b=bounds(blockPoly),w=b.maxX-b.minX,h=b.maxY-b.minY,out=[];
@@ -2524,7 +2524,7 @@ function fmtAreaMetric(v){
 }
 function metricGrid(rows){return'<div class="building-metric-grid">'+rows.map(function(r){return'<span><small>'+esc(r[0])+'</small><b>'+esc(r[1])+'</b></span>';}).join('')+'</div>';}
 function buildingSection(title,rows){return'<section class="building-info-section"><h4>'+esc(title)+'</h4>'+metricGrid(rows)+'</section>';}
-var BUILDING_AREA_SCALE=13,BUILDING_VOLUME_SCALE=46.6,BUILDING_LINEAR_SCALE=3.6;
+var BUILDING_AREA_SCALE=13,BUILDING_VOLUME_SCALE=46.6,BUILDING_STORAGE_SCALE=.42,BUILDING_LINEAR_SCALE=3.6;
 function scaledBuildingMetrics(v){
   var rawArea=Math.max(0,Number(v.footprint)||0),rawVolume=Math.max(0,Number(v.airspace)||0),rawHeight=Math.max(0,Number(v.height)||0);
   return Object.assign({},v,{
@@ -2537,7 +2537,7 @@ function scaledBuildingMetrics(v){
     width:(Number(v.width)||0)*BUILDING_LINEAR_SCALE,
     depth:(Number(v.depth)||0)*BUILDING_LINEAR_SCALE,
     perimeter:(Number(v.perimeter)||0)*BUILDING_LINEAR_SCALE,
-    maxStorageVolume:(Number(v.maxStorageVolume)||0)*BUILDING_VOLUME_SCALE,
+    maxStorageVolume:(Number(v.maxStorageVolume)||0)*BUILDING_STORAGE_SCALE,
     frontageWidth:(Number(v.frontageWidth)||0)*BUILDING_LINEAR_SCALE,
     perimeterDefense:(Number(v.perimeterDefense)||0)*BUILDING_LINEAR_SCALE,
     structuralMass:(Number(v.structuralMass)||0)*BUILDING_VOLUME_SCALE

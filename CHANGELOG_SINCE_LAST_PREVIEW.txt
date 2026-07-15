@@ -174,3 +174,449 @@ CURRENT WORKSPACE SUMMARY
 - 5 modified source files.
 - Approximately 393 inserted lines and 109 removed lines before this changelog was added.
 - These changes are currently uncommitted relative to baseline commit 3868769.
+
+
+================================================
+UPDATE - CHANGES AFTER THE NEXT PREVIEW RUN
+================================================
+
+Updated: July 12, 2026
+Preview baseline commit: d58ed7e
+Scope: Alcohol procurement gameplay, treasury accounting, negotiation UI,
+Estate storage, delivery trucks, road traffic, and related debug support.
+
+
+13. NEW ALCOHOL DEALING ORDER
+-----------------------------
+- Added a repeatable early-game Alcohol Dealing order issued through the existing Inbox system.
+- Supplier locations are selected outside Mafia territory and biased toward distant valid buildings.
+- Ordinary alcohol uses warehouses, industrial buildings, workshops, factories, and storage sites.
+- Medicinal Whiskey uses hospitals, clinics, medical offices, doctors, or suitable civic buildings.
+- Orders include acceptance deadlines, completion deadlines, issuer information, rewards,
+  target highlighting, Jump to Location, and live Active Order instructions.
+- The target does not automatically move the player; the player must accept the order and travel.
+- Failed supplier negotiations end the order without creating additional mission-stage messages.
+- Successful purchases progress into truck loading, Estate delivery, unloading, and completion.
+- Alcohol orders are limited to one per week and cannot overlap another active integrated order.
+- Orders do not spawn when no affordable and rank-eligible shipment exists.
+
+
+14. RANK-LOCKED ALCOHOL TYPES
+-----------------------------
+- Street Punk access:
+  - Homemade Wine or Cider.
+  - Bathtub Gin.
+- Associate access:
+  - Moonshine.
+  - Medicinal Whiskey.
+- Soldier access:
+  - Bootlegged imported Scotch and Rye.
+- Higher ranks retain access to lower-rank alcohol.
+- Rare imported spirits can appear as loose bottles or exceptionally rare full crates.
+- Shipment quantity, package type, price, volume, rarity, and negotiation difficulty are generated
+  from the alcohol definition rather than being hardcoded into the mission flow.
+
+
+15. MAFIA TREASURY AND PROCUREMENT RULES
+----------------------------------------
+- Alcohol belongs to the Mafia and is no longer purchased with player clean or dirty cash.
+- Reused the existing state.organizationFinance.coffers ledger used by Estate envelope deliveries.
+- Added a one-time $10,000 Providence testing grant to Mafia coffers.
+- Alcohol quality is capital-gated as well as rank-gated:
+  - Low coffers primarily support homemade alcohol.
+  - Increasing capital unlocks Gin, Moonshine, Medicinal Whiskey, and imported spirits.
+- A 10% safe-spend metric determines whether a shipment is financially responsible enough to spawn.
+- Shipment generation sizes cargo so the maximum gray-deal cost remains within that metric.
+- The 10% value is not directly handed to the player.
+- Accepting an order reserves the exact maximum gray-deal price as a separate accountable
+  Family cash envelope.
+- The supplier is paid only from this mission envelope; general player money remains untouched.
+- Purchase advances and supplier payments create entries in the Mafia organization ledger.
+- If the deal or mission fails, all unspent advance money returns to Mafia coffers.
+- On successful Estate delivery, remaining money is divided evenly:
+  - 50% becomes a personal dirty-cash savings bonus for the player.
+  - 50% is returned to Mafia coffers.
+- The ordinary order-completion reward remains separate from the procurement savings bonus.
+
+
+16. ALCOHOL NEGOTIATION MINIGAME
+--------------------------------
+- Added a one-attempt circular hold-and-release negotiation minigame based on the extortion meter.
+- Outcome zones vary by alcohol rarity and difficulty:
+  - Red: supplier refuses the deal and the mission fails.
+  - Gray: the Family pays 25% above the asking price.
+  - White: the Family pays 20% below the asking price.
+  - Black: the supplier is strongly out-negotiated and receives only 20% of asking price.
+- The meter supports continuous revolutions with gradual acceleration capped at 1.25x.
+- Fixed a CSS specificity conflict that hid the colored circular outcome zones.
+- Restored the visible clockwise gold fill and added a clear rotating endpoint marker.
+- Simplified repeated information in the negotiation panel.
+- Removed Mafia coffers from the supplier-facing negotiation screen.
+- The panel now shows the Family cash envelope, supplier asking price, cargo volume,
+  and remaining accountable cash.
+- Added a horizontal negotiated-result track matching the circular outcome zones.
+- Added contextual supplier dialogue for the welcome state and every possible outcome.
+- Added a concise legend and one-attempt instructions.
+
+
+17. DELIVERY TRUCK AND MULTI-TRIP HAULING
+-----------------------------------------
+- Added a visible low-poly 1930s cargo truck to the 3D city renderer.
+- Added a reusable missionVehicle payload instead of coupling the truck directly to one mission.
+- Truck cargo visibly changes according to loaded volume.
+- Truck carrying capacity is currently 3 cubic meters.
+- Shipments larger than truck capacity require repeated supplier-to-Estate trips.
+- The Active Order HUD shows truck capacity, supplier stock, Estate storage,
+  delivered progress, and remaining Family envelope cash.
+- The player pawn is hidden while driving and restored when vehicle travel ends.
+- Buildings naturally occlude the truck through normal depth rendering.
+
+
+18. VEHICLE ROAD NAVIGATION AND TRAFFIC
+---------------------------------------
+- Added a dedicated vehicle navigation graph separate from pedestrian sidewalk navigation.
+- Trucks travel along road centerlines instead of following pedestrian sidewalk paths.
+- Vehicles leave road centerlines only to use a building's established entrance/exit connection.
+- Added smooth interpolated truck movement between logical simulation updates.
+- Added generated traffic metadata to metro-grid roads.
+- Minor streets use deterministic alternating one-way directions.
+- Major avenues and collector roads remain two-way.
+- Split road segments belonging to the same street retain a consistent traffic direction.
+- Directed vehicle pathfinding respects one-way edges while using two-way roads where appropriate.
+- The vehicle navigation component is reusable for future cars and delivery missions.
+
+
+19. ESTATE ALCOHOL STORAGE
+--------------------------
+- Added persistent Estate alcohol inventory with shipment name, package, volume, units,
+  purchase cost, market value, delivery date, and potential profit.
+- Added an Alcohol Storage section to the Estate building-information panel.
+- Added occupied/capacity display and a visual storage meter.
+- Reduced globally inflated building storage scaling so storage cannot effectively last forever.
+- Estate alcohol capacity is clamped to a practical 12-48 cubic meter range.
+- Shipment generation checks remaining Estate capacity before creating an order.
+- A shipment can fail if the Estate genuinely runs out of space before unloading finishes.
+
+
+20. PROVIDENCE PROCUREMENT DEBUG TOOLS
+--------------------------------------
+- Added a dedicated Family Procurement Debug panel to Providence.
+- The panel displays:
+  - Current Mafia coffers.
+  - The 10% safe-spend metric.
+  - Current player rank.
+  - Alcohol types currently eligible at that rank and treasury level.
+- Added controls to add $10,000, subtract $1,000, or empty Mafia coffers.
+- Added controls to decrease or increase player rank through Street Punk, Associate, and Soldier.
+- Fixed the pre-Commission campaign initializer resetting debug ranks on every render.
+- Eligible alcohol now updates immediately after rank or treasury debug changes.
+- Debug treasury adjustments are recorded in the organization ledger.
+
+
+21. NEW ORDER ENVELOPE FIX
+--------------------------
+- Corrected the white order paper remaining visible through the envelope while not hovered.
+- The paper is now fully concealed at rest, appears only while hovering/focusing,
+  and retracts cleanly when the pointer leaves.
+
+
+22. FILES ADDED OR CHANGED IN THIS UPDATE
+-----------------------------------------
+- public/desk-don/alcohol-delivery.js
+  New isolated mission module containing alcohol definitions, rank/capital eligibility,
+  order generation, treasury advances, negotiation, settlement, truck trips,
+  Estate inventory, debug controls, HUD integration, and save/load support.
+
+- public/desk-don/alcohol-delivery.css
+  Negotiation meter, result display, supplier dialogue, mission HUD,
+  Estate storage, and Providence procurement debug styling.
+
+- index.html
+  Loads the new alcohol mission JavaScript and stylesheet.
+
+- public/desk-don/app.js
+  Reduced building storage scaling and added generated one-way/two-way traffic metadata.
+
+- public/desk-don/street-prologue.js
+  Alcohol-order dispatch/acceptance integration, active-order conflict protection,
+  and persistent Providence rank-debug override support.
+
+- public/desk-don/street-prologue.css
+  Corrected concealed/resting state for the animated New Order envelope paper.
+
+- src/district3d.js
+  Added the reusable 3D mission truck, directed vehicle road graph,
+  road-only route calculation, smooth vehicle interpolation, and cargo visualization.
+
+
+23. VALIDATION COMPLETED FOR THIS UPDATE
+----------------------------------------
+- JavaScript syntax checks passed for app, street prologue, alcohol mission, and 3D renderer files.
+- npm run architecture:check passed.
+- npm run build passed.
+- Preview at http://127.0.0.1:4175/ returned HTTP 200.
+
+
+CURRENT UPDATE WORKSPACE SUMMARY
+--------------------------------
+- Baseline commit: d58ed7e.
+- 5 tracked source files currently modified.
+- 2 new alcohol mission source files added.
+- Preview log files remain untracked and are not part of the gameplay changes.
+- Changes remain uncommitted after this changelog update.
+
+
+24. PERSISTENT PEOPLE AND WORLD SIMULATION
+------------------------------------------
+- Added one canonical population shared by building ownership, households, employment,
+  schedules, Blood Family records, Mafia Family records, missions, and the 3D renderer.
+- Added persistent personalities, dispositions, money, influence, reputation, assets,
+  goals, memories, careers, promotions, births, deaths, and business expansion.
+- Assigned every generated building an owner or responsible person and populated homes
+  with persistent households.
+- Added the searchable People Index, person dossiers, bookmarks, city location actions,
+  and owner/resident/employee links in Building Information.
+- Replaced anonymous decorative pedestrian loops with scheduled residents walking or
+  driving between exact buildings.
+- Added pooled citizen vehicles, nighttime population limits, and street lamps that
+  activate at night.
+
+
+25. POPULATION PERFORMANCE AND MOVEMENT REPAIR
+----------------------------------------------
+- Removed repeated rebuilding of all family links and 1,100+ schedules from every clock update.
+- Combined pedestrian and vehicle schedule evaluation into one cached population snapshot.
+- Assigned stable mesh slots by person ID so commuters no longer shift or teleport when
+  another resident enters or leaves the visible pool.
+- Pedestrians and citizen cars now interpolate every rendered frame between logical clock updates.
+- Reduced visible population at 2x and suspend population rendering at 4x, 10x, and 50x;
+  all residents continue their offscreen schedules and life simulation at every speed.
+- Rebuilt lamp placement from sidewalk paths instead of road-center geometry.
+- Replaced twelve expensive dynamic point lights with one instanced glow layer, allowing
+  every lamp bulb to visibly switch on without multiplying lighting draw cost.
+- Added persistent-population architecture checks and a headless performance smoke test.
+
+
+26. POPULATION VALIDATION
+-------------------------
+- npm run architecture:check passed.
+- npm run build passed.
+- Browser smoke test completed with no runtime exceptions and successful save/load.
+- Latest generated city: 1,162 people, 412 households, 528 owned properties,
+  and zero missing owner records.
+
+
+27. POPULATION MOVEMENT, LIGHTING, UI, AND ECONOMY REPAIR
+---------------------------------------------------------
+- Removed traffic lights and their renderer payload/geometry entirely.
+- Rebuilt streetlight placement to guarantee coverage on every usable sidewalk segment,
+  while keeping poles, bulbs, and light pools instanced.
+- Added warm nighttime illumination through emissive pools, a low-cost ambient contribution,
+  and a fixed six-light local budget instead of one expensive light per lamp.
+- Replaced random commute durations with route-distance travel timing.
+- Pedestrians now use the player's fixed walking pace; civilian cars use one fixed,
+  slightly faster pace.
+- Removed tick prediction caps and stop/start collision snapping from population rendering,
+  allowing both pedestrian and car meshes to advance every rendered frame.
+- Added parcel and trip-duration caches so high time speeds do not repeatedly scan every
+  parcel for every resident.
+- Reworked the People Index to fit inside the available viewport with internal, themed
+  scrollbars and more compact information density.
+- Search results now update in place on the next animation frame, preserving input focus
+  while typing quickly.
+- Added occupation-based civilian cash reserves and rank-based Mafia income/cash bands.
+- Added an editable job and organized-crime economy reference file.
+- Browser validation: 1x 168 FPS with 50 pedestrians; 4x and 10x 180 FPS with
+  offscreen population simulation; no runtime errors.
+- Search retained focus after a live two-character update.
+- Validation economy sample: Boss $774/week and $34,488 cash; Bartender $16/week
+  and $54 cash.
+- Measured approximately 178 FPS at 1x, 180 FPS at 4x, 181 FPS at 10x,
+  and 168 FPS at 50x in the automated headless renderer test.
+
+
+28. STREETLIGHT, POPULATION PAUSE, SEARCH, AND STARTUP REPAIR
+-------------------------------------------------------------
+- Rebuilt lamp placement from the canonical vehicle-road graph so horizontal and
+  vertical streets receive equal coverage.
+- Removed the order-biased 320-lamp cap. Every street corner now receives a lamp,
+  while deterministic variable intervals keep lamps between corners from looking
+  mechanically uniform.
+- Kept poles, bulbs, and ground pools instanced; eight reusable point lights now
+  follow the viewed area and illuminate nearby building geometry at night.
+- Raised and reduced the lamp pools so they remain visible above sidewalks without
+  covering the city in oversized overlapping circles.
+- Pausing now freezes pedestrian and civilian-car visual progress exactly where it
+  was rendered instead of easing backward to the previous simulation tick.
+- High time speeds preserve cached pedestrian/car routes while their meshes are
+  hidden, and newly visible routes are assigned in small per-frame batches.
+- Replaced full-population payload sorting on every clock update with a stable,
+  non-persistent render order that stops evaluating once visible pools are full.
+- Debounced People Index searching by 65 ms, cached normalized search text, and
+  limited live result DOM updates to 90 rows while preserving input focus.
+- Converted the People Index to a viewport-fitted flex layout and compact four-column
+  dossier; both the page and dossier now fit without a right-side scrollbar.
+- Fixed a startup cache bug where every home/work lookup regenerated the full layout
+  and reassigned all building names. The parcel index is now reused until city identity
+  changes, while city regeneration still invalidates it safely.
+- Clean-profile startup improved from 22.8 seconds to 4.9 seconds; population creation
+  improved from 4.5 seconds to 82 ms in the profiled browser run.
+- Final live sample: 1,159 people, 405 households, 549 owned properties, zero missing
+  owners, 2,350 lamp placements, and eight camera-local point lights.
+- Final performance sample: 181 FPS at 1x, 180 FPS at 4x and 10x, and 164 FPS at 50x.
+- Search focus, save serialization, family links, follow-target links, nighttime 5%
+  pedestrian density, and traffic-light removal all passed with no runtime errors.
+
+
+29. SPARSE PERMANENT STREETLIGHT LAYOUT
+---------------------------------------
+- Replaced the dense four-corner/per-side lamp pattern with one lamp per true road
+  intersection and only one or two irregularly placed lamps between intersections.
+- Moved lamp poles from the center of sidewalks to the curb line between sidewalk
+  and roadway.
+- Removed camera-following point lights. Every lamp now owns a permanent instanced,
+  soft nighttime light pool, so visible illumination stays fixed while the camera moves.
+
+
+30. CITY-CLIPPED ENVIRONMENTAL STREET LIGHTING
+----------------------------------------------
+- Streetlamp candidates are now clipped to the generated city polygon with an extra
+  boundary margin, preventing poles from appearing beyond the playable city surface.
+- Added a permanent world-space street-light map sampled by roads, sidewalks, building
+  façades, pedestrians, and civilian vehicles. Night illumination now affects nearby
+  geometry instead of appearing only as a flat pool beneath each pole.
+- Kept the lighting independent from camera position and avoided one expensive realtime
+  point light per streetlamp.
+
+
+31. DIRECTIONAL STREETLIGHT SHADING
+-----------------------------------
+- Replaced the broad scalar brightness texture with a 1024px directional light field
+  encoding each fragment's nearest streetlamp and distance from it.
+- Lit materials now use world-space surface normals: façades, cars, and pedestrians
+  brighten only on the side facing the lamp, while opposite faces remain dark.
+- Reduced lamp radius and ground-glow size substantially; illumination fades before
+  reaching building roofs and no longer covers entire structures in a flat wash.
+- Included lamp posts in the nighttime material pass and added low-cost projected
+  shadows behind nearby pedestrians and civilian vehicles.
+- Removed the legacy additive ground-plane decals completely; the visible pool now
+  comes from the road and sidewalk materials receiving directional light themselves.
+
+
+32. REAL BULB LIGHTING AND POPULATION SHADOWS
+----------------------------------------------
+- Removed the directional texture field and projected circle-shadow approximation;
+  street lighting no longer paints a light or shadow decal onto the ground.
+- Added real warm omnidirectional lights at the physical bulb height. At perceptible camera detail,
+  nearby lamps illuminate roads, sidewalks, building facades, lamp posts, vehicles,
+  and pedestrians using their actual surface direction and distance from the source.
+- Added a bounded camera-detail light pool so hundreds of emissive streetlamps remain
+  viable without compiling hundreds of realtime lights into every city material.
+- Added soft shadow maps to the lamps nearest visible moving people and vehicles.
+  Pedestrians, cars, buildings, roads, sidewalks, and estate surfaces now use proper
+  shadow caster/receiver flags instead of simulated flat silhouettes.
+- Distant city zoom keeps emissive bulbs but omits sub-pixel light pools and shadows;
+  close and street-level views activate the full dynamic lighting pass.
+
+
+33. BATCHED STREETLIGHT CONTAMINATION
+-------------------------------------
+- Removed all realtime street PointLights and shadow maps after the live preview
+  showed that their GPU cost was not viable for the full simulated population.
+- Kept the existing lampposts and emissive bulbs, with one high-resolution radial
+  nighttime decal beneath each post. Every decal is rendered in one instanced draw.
+- Added smooth, density-weighted light-contamination ribbons along the roads. Streets
+  with more lamps are brighter while sparsely lit streets stay comparatively dark.
+- Added batched warm facade washes to the building sides facing illuminated streets,
+  creating a uniform street-to-building glow without per-lamp lighting calculations.
+- The replacement is fixed in world space, independent of the camera, and uses no
+  dynamic shadow subjects or camera-driven light reassignment.
+
+
+34. SUBTYPE-AWARE BUILDING WINDOWS
+----------------------------------
+- Removed the uniform warm facade wash from street lighting.
+- Added batched window panes and frames to residential, commercial, and civic
+  buildings. Industrial buildings, warehouses, factories, and workshops remain
+  windowless by design.
+- Added subtype-specific layouts: larger house windows, dense apartment and hotel
+  grids, commercial storefronts, office windows, and civic-building patterns.
+- A deterministic subset of windows illuminates at night. Bars, restaurants,
+  bakeries, pharmacies, hotels, hospitals, clinics, and police buildings are more
+  likely to remain lit, while schools, banks, courthouses, and offices are darker.
+- Inactive buildings never illuminate. Daytime keeps reflective dark panes visible;
+  nighttime adds warm panes and a subtle batched halo without realtime lights.
+
+
+35. COHESIVE FACADES, ENTRIES, AND STOREFRONTS
+----------------------------------------------
+- Window panes and frames now inherit a darker tint from their building's wall color
+  instead of using one plain-black material across the city.
+- Apartment, hotel, office, hospital, and other dense multi-floor buildings now use
+  complete window rows with taller panes that occupy more of each floor height.
+- Added visible doors at the same facade points used by character pathfinding. Door
+  generation chooses deterministic single or double entrances based on building use.
+- Commercial frontage now uses four layout families, including paired display windows,
+  long horizontal glass, narrow tall panes, asymmetric bays, and entry gaps.
+- Industrial buildings remain windowless but now receive a large panelled garage door
+  at their entry point and a smaller service door alongside it.
+- Frames, panes, doors, and garage details remain city-wide batches rather than separate
+ objects per building.
+
+
+36. REGULAR FACADES AND OCCUPANCY LIGHT SCHEDULES
+--------------------------------------------------
+- Prevented regular windows from occupying commercial ground-floor frontage, so
+  storefront layouts can no longer overlap ordinary window rows.
+- Removed random holes from facade rows. Long buildings now add more evenly spaced
+  window columns instead of stretching a fixed small set across the wall.
+- Adjusted pane proportions away from square shapes and retained larger horizontal
+  house windows and taller multi-floor apartment, hotel, and office windows.
+- Darkened all window, storefront, door, and garage outlines and softened illuminated
+  glass from bright gold to a more subdued warm yellow.
+- Replaced the binary all-at-once night switch with deterministic early, middle, late,
+  and overnight batches. Windows and storefronts progressively illuminate at dusk,
+  then shut down in waves during the evening.
+- Added an independent four-percent overnight occupancy batch. From midnight until
+  06:00 only this batch remains illuminated, simulating a mostly sleeping city.
+- Kept all facade and light groups batched; the new schedules do not create per-window
+  meshes, timers, realtime lights, or shadow-map work.
+
+
+37. ARCHITECTURAL WINDOW VARIANTS AND INDIVIDUAL LIGHTS
+-------------------------------------------------------
+- Added six deterministic building-level facade rhythms: regular grids, tall panes,
+  broad panes, paired bays, triple bays, and horizontal window bands. Buildings stay
+  internally organized while no longer sharing one universal window arrangement.
+- Long facades continue adding columns based on their physical length, with grouped
+  layouts preserving safe spacing so paired and triple panes do not overlap.
+- Replaced bright unlit frame materials with dark, wall-tinted Lambert materials for
+  window, storefront, door, service-door, and garage outlines.
+- Replaced the four synchronized fading light batches with per-pane schedule data on
+  two city-wide GPU batches. Every eligible pane now switches instantly at its own
+  deterministic evening on-time and nightly off-time.
+- Overnight windows are selected from panes that already switched on during evening
+  and remain continuously active through midnight. This removes the 00:00 pop while
+  keeping roughly four percent of the city illuminated until individual morning
+  shutoff times after 06:00.
+- The implementation adds no per-window scene objects, JavaScript timers, or realtime
+  lights; schedule evaluation happens in the existing batched window shader.
+
+
+38. ROLLING NIGHT WINDOWS AND CAMERA OCCLUSION
+----------------------------------------------
+- Brightened illuminated glass while keeping every pane within the same warm-yellow
+  family. Each pane now carries a deterministic brightness value, producing subtle
+  dim, normal, and brighter interiors without introducing additional meshes.
+- Replaced the fixed overnight window set with a rolling GPU schedule. Candidate panes
+  change independently at staggered intervals as households switch lights off and on.
+- Overnight occupancy decreases gradually from roughly four percent around midnight
+  toward one percent by 06:00. The rolling pool begins progressively before midnight
+  and shuts down progressively after 06:00, avoiding synchronized population changes.
+- Added close-camera building obstruction handling. At close zoom or low isometric
+  angles, a camera-to-focus ray identifies only blocking building meshes and renders
+  them as dark translucent silhouettes until the view clears.
+- Occluded buildings retain their geometry, facade openings, and edge readability;
+  original opacity, depth-writing, and render ordering restore automatically.
+- Camera obstruction raycasts are cached by camera position, and material shader state
+  changes only when the actual blocker set changes rather than every rendered frame.

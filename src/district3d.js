@@ -6,6 +6,7 @@ import helvetikerBold from '/node_modules/three/examples/fonts/helvetiker_bold.t
 import { disposeObject } from './district3d/core/disposal.js';
 import { buildingProfilesFor, colorByCategory, profileForSubtype, typeForCategory } from './district3d/core/building-profiles.js';
 import { lightingAtPhase, lightingForPayload, lightingForPeriod, periodIndex } from './district3d/core/lighting.js';
+import { createStreetAtmosphere } from './district3d/core/street-lighting.js';
 import {
   buildMergedMafiaTerritoryOverlay,
   controlledTerritoryBlockIds,
@@ -2507,6 +2508,176 @@ function buildPawnRoadNav(roads, center, scale, blocks = []) {
   return { segments, nodes, edges, blockPolys: blockWorldPolys, routeCache: new Map(), streetGrid: null, sidewalkOnly: gridMode };
 }
 
+// Vehicles use road centerlines, never the sidewalk graph. Minor streets can
+// be directed while avenues and collectors remain two-way thoroughfares.
+function buildVehicleRoadNav(roads, center, scale) {
+  const segments = (roads || []).filter((road) => road?.a && road?.b).map((road) => {
+    const aw = worldPoint(road.a, center, scale);
+    const bw = worldPoint(road.b, center, scale);
+    return {
+      id: `vehicle-${road.id}`,
+      road,
+      a: { x: aw.x, z: aw.y },
+      b: { x: bw.x, z: bw.y },
+      oneWay: !!road.oneWay,
+      direction: road.trafficDirection || (road.oneWay ? 'forward' : 'both'),
+      widthWorld: Math.max(0.12, (Number(road.width) || 12) * scale),
+      cuts: [],
+    };
+  }).filter((segment) => Math.hypot(segment.b.x - segment.a.x, segment.b.z - segment.a.z) > 0.15);
+  const nodes = [];
+  const nodeKeys = new Map();
+  const edges = [];
+  function nodeFor(point) {
+    const key = `${Math.round(point.x * 100) / 100},${Math.round(point.z * 100) / 100}`;
+    if (nodeKeys.has(key)) return nodeKeys.get(key);
+    const id = nodes.length;
+    nodeKeys.set(key, id);
+    nodes.push({ id, x: point.x, z: point.z, edges: [] });
+    return id;
+  }
+  segments.forEach((segment) => segment.cuts.push({ t: 0, point: segment.a }, { t: 1, point: segment.b }));
+  for (let i = 0; i < segments.length; i += 1) {
+    for (let j = i + 1; j < segments.length; j += 1) {
+      const hit = lineIntersection2d(segments[i].a, segments[i].b, segments[j].a, segments[j].b);
+      if (!hit) continue;
+      segments[i].cuts.push({ t: hit.t, point: { x: hit.x, z: hit.z } });
+      segments[j].cuts.push({ t: hit.u, point: { x: hit.x, z: hit.z } });
+    }
+  }
+  segments.forEach((segment) => {
+    segment.cuts = segment.cuts.sort((a, b) => a.t - b.t).filter((cut, index, all) => index === 0 || Math.hypot(cut.point.x - all[index - 1].point.x, cut.point.z - all[index - 1].point.z) > 0.04);
+    segment.cuts.forEach((cut) => { cut.nodeId = nodeFor(cut.point); });
+    for (let i = 0; i < segment.cuts.length - 1; i += 1) {
+      const first = segment.cuts[i];
+      const second = segment.cuts[i + 1];
+      const length = Math.hypot(second.point.x - first.point.x, second.point.z - first.point.z);
+      if (length < 0.04) continue;
+      let from = first.nodeId;
+      let to = second.nodeId;
+      if (segment.oneWay && segment.direction === 'reverse') [from, to] = [to, from];
+      const id = edges.length;
+      edges.push({ from, to, length, directed: segment.oneWay, segmentId: segment.id });
+      nodes[from].edges.push(id);
+      if (!segment.oneWay) nodes[to].edges.push(id);
+    }
+  });
+  return { segments, nodes, edges, routeCache: new Map() };
+}
+
+function shortestVehicleRoadPath(nav, start, end) {
+  if (!nav?.segments?.length || !nav.nodes.length) return [start, end];
+  const cacheKey = `${start.x.toFixed(2)},${start.z.toFixed(2)}:${end.x.toFixed(2)},${end.z.toFixed(2)}`;
+  if (nav.routeCache.has(cacheKey)) return nav.routeCache.get(cacheKey);
+  function anchor(point, mode) {
+    let best = null;
+    nav.segments.forEach((segment) => {
+      const near = nearestPointOnRoad2d(point, segment.a, segment.b);
+      if (!best || near.distance < best.near.distance) best = { segment, near };
+    });
+    if (!best) return { point, connections: [], segment: null, t: 0 };
+    const segment = best.segment;
+    let validCuts = segment.cuts;
+    if (segment.oneWay && mode === 'start') validCuts = validCuts.filter((cut) => segment.direction === 'reverse' ? cut.t <= best.near.t + 0.001 : cut.t >= best.near.t - 0.001);
+    if (segment.oneWay && mode === 'end') validCuts = validCuts.filter((cut) => segment.direction === 'reverse' ? cut.t >= best.near.t - 0.001 : cut.t <= best.near.t + 0.001);
+    const connections = validCuts.map((cut) => ({ id: cut.nodeId, length: Math.hypot(cut.point.x - best.near.point.x, cut.point.z - best.near.point.z) })).sort((a, b) => a.length - b.length).slice(0, segment.oneWay ? 1 : 2);
+    return { point: best.near.point, connections, segment, t: best.near.t };
+  }
+  const source = anchor(start, 'start');
+  const target = anchor(end, 'end');
+  if (source.segment && source.segment === target.segment) {
+    const allowed = !source.segment.oneWay || (source.segment.direction === 'reverse' ? target.t <= source.t : target.t >= source.t);
+    if (allowed) {
+      const direct = [source.point, target.point];
+      nav.routeCache.set(cacheKey, direct);
+      return direct;
+    }
+  }
+  const distance = new Array(nav.nodes.length).fill(Infinity);
+  const previous = new Array(nav.nodes.length).fill(null);
+  const queue = [];
+  source.connections.forEach((connection) => { distance[connection.id] = connection.length; queue.push(connection.id); });
+  while (queue.length) {
+    queue.sort((a, b) => distance[a] - distance[b]);
+    const nodeId = queue.shift();
+    nav.nodes[nodeId].edges.forEach((edgeId) => {
+      const edge = nav.edges[edgeId];
+      if (edge.directed && edge.from !== nodeId) return;
+      const next = edge.from === nodeId ? edge.to : edge.from;
+      const cost = distance[nodeId] + edge.length;
+      if (cost >= distance[next]) return;
+      distance[next] = cost;
+      previous[next] = nodeId;
+      if (!queue.includes(next)) queue.push(next);
+    });
+  }
+  let endNode = null;
+  let bestCost = Infinity;
+  target.connections.forEach((connection) => {
+    const cost = distance[connection.id] + connection.length;
+    if (cost < bestCost) { bestCost = cost; endNode = connection.id; }
+  });
+  if (endNode === null || !Number.isFinite(bestCost)) return [source.point, target.point];
+  const nodePath = [];
+  for (let current = endNode; current !== null; current = previous[current]) nodePath.push(current);
+  nodePath.reverse();
+  const path = [source.point].concat(nodePath.map((id) => ({ x: nav.nodes[id].x, z: nav.nodes[id].z })), [target.point]).filter((point, index, all) => index === 0 || Math.hypot(point.x - all[index - 1].x, point.z - all[index - 1].z) > 0.035);
+  nav.routeCache.set(cacheKey, path);
+  return path;
+}
+
+function vehicleRoadPointForBuilding(building, vehicleNav, pedestrianNav) {
+  if (!building) return null;
+  const entry = routePointForBuilding(building, pedestrianNav) || building.center;
+  if (!entry) return null;
+  const point = { x: entry.x, z: Number.isFinite(entry.z) ? entry.z : entry.y };
+  let best = null;
+  (vehicleNav?.segments || []).forEach((segment) => {
+    const near = nearestPointOnRoad2d(point, segment.a, segment.b);
+    if (!best || near.distance < best.distance) best = { x: near.point.x, z: near.point.z, distance: near.distance };
+  });
+  return best || point;
+}
+
+function vehicleLanePath(nav, centerlinePath) {
+  if (!centerlinePath || centerlinePath.length < 2) return centerlinePath || [];
+  return centerlinePath.map((point, index) => {
+    const previous = centerlinePath[Math.max(0, index - 1)];
+    const next = centerlinePath[Math.min(centerlinePath.length - 1, index + 1)];
+    const dx = next.x - previous.x;
+    const dz = next.z - previous.z;
+    const length = Math.max(0.001, Math.hypot(dx, dz));
+    let nearest = null;
+    (nav?.segments || []).forEach((segment) => {
+      const hit = nearestPointOnRoad2d(point, segment.a, segment.b);
+      if (!nearest || hit.distance < nearest.distance) nearest = { segment, distance: hit.distance };
+    });
+    if (!nearest || nearest.segment.oneWay) return point;
+    const offset = Math.max(0.08, Math.min(0.22, nearest.segment.widthWorld * 0.24));
+    // New York uses right-hand traffic: reversing direction automatically
+    // moves the vehicle onto the opposite lane of the same two-way road.
+    return { x: point.x + (dz / length) * offset, z: point.z - (dx / length) * offset };
+  });
+}
+
+function vehicleMovementPath(entry, fromBuilding, targetBuilding) {
+  const fromCenter = buildingCenterXZ(fromBuilding);
+  const targetCenter = buildingCenterXZ(targetBuilding);
+  const fromEntryRaw = routePointForBuilding(fromBuilding, entry.roadNav);
+  const targetEntryRaw = routePointForBuilding(targetBuilding, entry.roadNav);
+  const fromEntry = fromEntryRaw ? { x: fromEntryRaw.x, z: fromEntryRaw.y } : fromCenter;
+  const targetEntry = targetEntryRaw ? { x: targetEntryRaw.x, z: targetEntryRaw.y } : targetCenter;
+  const fromRoad = vehicleRoadPointForBuilding(fromBuilding, entry.vehicleNav, entry.roadNav);
+  const targetRoad = vehicleRoadPointForBuilding(targetBuilding, entry.vehicleNav, entry.roadNav);
+  const path = [];
+  [fromCenter, fromEntry, fromRoad].forEach((point) => appendDistinctPathPoint(path, point));
+  const roadStart = fromRoad || fromEntry;
+  const roadEnd = targetRoad || targetEntry;
+  if (roadStart && roadEnd) vehicleLanePath(entry.vehicleNav, shortestVehicleRoadPath(entry.vehicleNav, roadStart, roadEnd)).forEach((point) => appendDistinctPathPoint(path, point));
+  [targetRoad, targetEntry, targetCenter].forEach((point) => appendDistinctPathPoint(path, point));
+  return path;
+}
+
 function streetGridPath(nav, start, end) {
   if (!nav?.blockPolys?.length) return null;
   if (!nav.streetGrid) {
@@ -3306,7 +3477,6 @@ function buildingForParcel(parcel, center, scale, materials, rayTargets, buildin
   const mesh = new THREE.Mesh(geo, wall);
   mesh.position.set(wp.x, height / 2 + 0.05, wp.y);
   mesh.castShadow = false;
-  mesh.receiveShadow = true;
   mesh.userData.parcel = parcel;
   mesh.userData.activeColor = safehouseColor;
   mesh.userData.originalColor = inactive ? inactiveColor(safehouseColor) : safehouseColor;
@@ -3713,6 +3883,399 @@ function createMissionHighlightRig(scene) {
   return group;
 }
 
+// Reusable street vehicle used by hauling missions. It deliberately stays
+// separate from player and pedestrian rigs so future deliveries can share it.
+function createMissionTruckRig(scene) {
+  const group = new THREE.Group();
+  group.visible = false;
+  group.userData.missionVehicle = true;
+  const paint = new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 0.88, metalness: 0.05 });
+  const darkPaint = new THREE.MeshStandardMaterial({ color: 0x231a13, roughness: 0.95 });
+  const cargoPaint = new THREE.MeshStandardMaterial({ color: 0x6a4a2b, roughness: 0.92 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x78909a, roughness: 0.35, metalness: 0.05 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x10100f, roughness: 1 });
+  const lamp = new THREE.MeshStandardMaterial({ color: 0xe6c874, emissive: 0x6f4c15, emissiveIntensity: 0.45, roughness: 0.45 });
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.38), darkPaint);
+  chassis.position.y = 0.16;
+  const cargo = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.38, 0.36), cargoPaint);
+  cargo.position.set(-0.2, 0.39, 0);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.35), paint);
+  cab.position.set(0.27, 0.35, 0);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.17, 0.34), paint);
+  hood.position.set(0.51, 0.25, 0);
+  const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.14, 0.25), glass);
+  windshield.position.set(0.427, 0.42, 0);
+  const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.07, 0.4), darkPaint);
+  bumper.position.set(0.64, 0.14, 0);
+  group.add(chassis, cargo, cab, hood, windshield, bumper);
+  [-0.3, 0.37].forEach((x) => [-0.22, 0.22].forEach((z) => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.055, 10), rubber);
+    wheel.rotation.x = Math.PI / 2;
+    wheel.position.set(x, 0.13, z);
+    group.add(wheel);
+  }));
+  [-0.12, 0.12].forEach((z) => {
+    const headlight = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 5), lamp);
+    headlight.position.set(0.665, 0.26, z);
+    group.add(headlight);
+  });
+  const crates = new THREE.Group();
+  [[-0.32, 0.62, -0.09], [-0.32, 0.62, 0.09], [-0.12, 0.62, 0]].forEach((position) => {
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.15, 0.15), cargoPaint);
+    crate.position.set(...position);
+    crates.add(crate);
+  });
+  group.add(crates);
+  group.userData.crates = crates;
+  group.scale.setScalar(0.82);
+  scene.add(group);
+  return group;
+}
+
+function updateMissionTruckObject(entry, vehicle, buildingMap) {
+  const truck = entry?.missionTruck;
+  if (!truck) return false;
+  if (!vehicle?.active) {
+    truck.visible = false;
+    return false;
+  }
+  let point = null;
+  if (vehicle.moving) {
+    const from = buildingMap?.get(vehicle.parcelId);
+    const target = buildingMap?.get(vehicle.targetParcelId);
+    const routeKey = `${vehicle.routeId || ''}:${vehicle.parcelId || ''}:${vehicle.targetParcelId || ''}`;
+    if (routeKey !== truck.userData.routeKey) {
+      truck.userData.routeKey = routeKey;
+      truck.userData.routePath = from && target ? vehicleMovementPath(entry, from, target) : [];
+      truck.userData.visualProgress = Math.max(0, Math.min(1, Number(vehicle.progress)||0));
+      truck.userData.progressUpdatedAt = performance.now();
+    }
+    const logicalProgress = Math.max(0, Math.min(1, Number(vehicle.progress)||0));
+    let visualProgress = Number.isFinite(truck.userData.visualProgress) ? truck.userData.visualProgress : logicalProgress;
+    const now = performance.now();
+    if (vehicle.timeMoving) {
+      const dt = Math.min(0.08, Math.max(0, (now - Number(truck.userData.progressUpdatedAt || now)) / 1000));
+      const duration = Math.max(1, Number(vehicle.moveDurationMinutes)||1);
+      const minutesPerSecond = (1000 / Math.max(1, Number(vehicle.timePeriodMs)||60000)) * Math.max(0, Number(vehicle.moveStepMinutes)||0);
+      visualProgress += (minutesPerSecond * dt) / duration;
+      if (visualProgress < logicalProgress) visualProgress += (logicalProgress - visualProgress) * Math.min(1, dt * 8);
+      visualProgress = Math.max(0, Math.min(1, visualProgress));
+    }
+    truck.userData.visualProgress = visualProgress;
+    truck.userData.progressUpdatedAt = now;
+    const routePosition = pointAlongPath(truck.userData.routePath || [], visualProgress);
+    point = routePosition ? { x: routePosition.x, y: routePosition.z } : null;
+  } else {
+    const parkedAt = buildingMap?.get(vehicle.parcelId);
+    point = routePointForBuilding(parkedAt, entry.roadNav) || parkedAt?.center || null;
+    truck.userData.routeKey = '';
+    truck.userData.routePath = [];
+  }
+  if (!point) {
+    truck.visible = false;
+    return false;
+  }
+  const previous = truck.userData.lastPosition;
+  if (previous) {
+    const dx = point.x - previous.x;
+    const dz = point.y - previous.z;
+    if (Math.hypot(dx, dz) > 0.002) truck.rotation.y = Math.atan2(-dz, dx);
+  }
+  truck.position.set(point.x, 0.025, point.y);
+  truck.userData.lastPosition = { x: point.x, z: point.y };
+  truck.visible = true;
+  if (entry.playerRoute) entry.playerRoute.visible = false;
+  const loadRatio = Math.max(0, Math.min(1, Number(vehicle.loadedVolume || 0) / Math.max(0.01, Number(vehicle.capacity || 1))));
+  truck.userData.crates?.children.forEach((crate, index) => { crate.visible = loadRatio > index / 3; });
+  return !!vehicle.moving;
+}
+
+function createCitizenVehicleRig(scene, buildingMap, roadNav, vehicleNav) {
+  const slotCount = 18;
+  const bodyGeometry = new THREE.BoxGeometry(0.52, 0.12, 0.24);
+  const roofGeometry = new THREE.BoxGeometry(0.27, 0.12, 0.21);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.04 });
+  const roofMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72, metalness: 0.04 });
+  const bodies = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, slotCount);
+  const roofs = new THREE.InstancedMesh(roofGeometry, roofMaterial, slotCount);
+  bodies.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  roofs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const entries = Array.from({ length: slotCount }, () => ({ active: false, visualProgress: 0, logicalProgress: 0, path: [], lastPosition: null }));
+  const matrix = new THREE.Matrix4();
+  const hiddenScale = new THREE.Vector3(0, 0, 0);
+  const visibleScale = new THREE.Vector3(1, 1, 1);
+  const rotation = new THREE.Quaternion();
+  const color = new THREE.Color();
+  const routeContext = { roadNav, vehicleNav };
+  let pendingVehicles = [];
+  function assignVehicle(entry, vehicle, index) {
+      const from = buildingMap.get(vehicle.fromParcelId);
+      const to = buildingMap.get(vehicle.toParcelId);
+      const routeKey = `${vehicle.routeId || ''}:${vehicle.fromParcelId || ''}:${vehicle.toParcelId || ''}`;
+      if (entry.personId !== vehicle.id || entry.routeKey !== routeKey) {
+        entry.personId = vehicle.id;
+        entry.routeKey = routeKey;
+        entry.path = from && to ? vehicleMovementPath(routeContext, from, to) : [];
+        entry.distance = 0;
+        for (let i = 0; i < entry.path.length - 1; i += 1) {
+          entry.distance += Math.hypot(entry.path[i + 1].x - entry.path[i].x, entry.path[i + 1].z - entry.path[i].z);
+        }
+        entry.visualProgress = Math.max(0, Math.min(1, Number(vehicle.progress || 0)));
+        entry.lastPosition = null;
+      }
+      entry.logicalProgress = Math.max(0, Math.min(1, Number(vehicle.progress || 0)));
+      // Cars use route distance, not trip duration supplied by the schedule. This keeps
+      // every car at the same speed regardless of how near or far its destination is.
+      entry.durationMinutes = Math.max(1, entry.distance / 1.65);
+      entry.active = !!vehicle.moving && entry.path.length > 1;
+      color.set(['#32281e', '#3b3d36', '#4b3024', '#26343b', '#4a4540', '#25221d'][index % 6]);
+      bodies.setColorAt(index, color);
+      roofs.setColorAt(index, color.clone().multiplyScalar(0.78));
+  }
+  function sync(vehicles) {
+    const next = Array.isArray(vehicles) ? vehicles.slice(0, slotCount) : [];
+    const byId = new Map(next.map((vehicle) => [vehicle.id, vehicle]));
+    const assigned = new Set();
+    entries.forEach((entry, index) => {
+      const vehicle = entry.personId && byId.get(entry.personId);
+      if (!vehicle) { entry.active = false; entry.personId = ''; entry.path = []; return; }
+      assignVehicle(entry, vehicle, index);
+      assigned.add(vehicle.id);
+    });
+    pendingVehicles = next.filter((vehicle) => !assigned.has(vehicle.id));
+  }
+  function processPending(limit = 3) {
+    let populated = false;
+    while (limit > 0 && pendingVehicles.length) {
+      const vehicle = pendingVehicles.shift();
+      const index = entries.findIndex((entry) => !entry.personId);
+      if (index < 0) break;
+      assignVehicle(entries[index], vehicle, index);
+      populated = true;
+      limit -= 1;
+    }
+    if (populated && bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
+    if (populated && roofs.instanceColor) roofs.instanceColor.needsUpdate = true;
+    return populated;
+  }
+  let lastUpdate = performance.now();
+  function update(now, moving, timing = {}, visible = true) {
+    const populated = processPending(3);
+    const dt = Math.min(0.1, Math.max(0, (now - lastUpdate) / 1000));
+    lastUpdate = now;
+    const periodMs = Math.max(16, Number(timing.timePeriodMs || 250));
+    const stepMinutes = Math.max(1, Number(timing.timeStepMinutes || 1));
+    const simulatedMinutesPerSecond = (1000 / periodMs) * stepMinutes;
+    entries.forEach((entry, index) => {
+      if (!visible || !entry.active) {
+        entry.renderVisible = false;
+        matrix.compose(new THREE.Vector3(0, -20, 0), rotation.identity(), hiddenScale);
+        bodies.setMatrixAt(index, matrix);
+        roofs.setMatrixAt(index, matrix);
+        return;
+      }
+      entry.renderVisible = true;
+      let desired = entry.visualProgress;
+      if (moving) {
+        const projected = desired + (simulatedMinutesPerSecond * dt) / entry.durationMinutes;
+        const catchUp = Math.max(0, entry.logicalProgress - projected) * Math.min(1, dt * 7);
+        desired = Math.min(1, projected + catchUp);
+      }
+      entry.visualProgress = desired;
+      const point = pointAlongPath(entry.path, desired);
+      const previous = entry.lastPosition || pointAlongPath(entry.path, Math.max(0, entry.visualProgress - 0.006));
+      const dx = point.x - previous.x;
+      const dz = point.z - previous.z;
+      const yaw = Math.hypot(dx, dz) > 0.001 ? Math.atan2(-dz, dx) : (entry.yaw || 0);
+      entry.yaw = yaw;
+      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      matrix.compose(new THREE.Vector3(point.x, 0.105, point.z), rotation, visibleScale);
+      bodies.setMatrixAt(index, matrix);
+      matrix.compose(new THREE.Vector3(point.x - Math.cos(yaw) * 0.03, 0.225, point.z + Math.sin(yaw) * 0.03), rotation, visibleScale);
+      roofs.setMatrixAt(index, matrix);
+      entry.lastPosition = { x: point.x, z: point.z };
+    });
+    bodies.instanceMatrix.needsUpdate = true;
+    roofs.instanceMatrix.needsUpdate = true;
+    return populated || pendingVehicles.length > 0;
+  }
+  scene.add(bodies, roofs);
+  sync([]);
+  update(performance.now(), false);
+  return { bodies, roofs, entries, sync, update };
+}
+
+function createStreetInfrastructure(scene, pedestrianNav, vehicleNav, options = {}) {
+  if (!options?.lamps) return null;
+  const group = new THREE.Group();
+  group.userData.streetInfrastructure = true;
+  const cityPolygon = cleanWorldPoly(options.cityPolygon || []);
+  const points = [];
+  const pointKeys = new Set();
+  let boundaryRejected = 0;
+  const addPoint = (x, z) => {
+    if (cityPolygon.length >= 3) {
+      const source = { x, y: z };
+      if (!pointInPoly(source, cityPolygon)) {
+        boundaryRejected += 1;
+        return;
+      }
+      let edgeDistance = Infinity;
+      for (let edgeIndex = 0; edgeIndex < cityPolygon.length; edgeIndex += 1) {
+        const a = cityPolygon[edgeIndex];
+        const b = cityPolygon[(edgeIndex + 1) % cityPolygon.length];
+        edgeDistance = Math.min(edgeDistance, nearestPointOnRoad2d(
+          { x, z },
+          { x: a.x, z: a.y },
+          { x: b.x, z: b.y },
+        ).distance);
+      }
+      if (edgeDistance < 0.055) {
+        boundaryRejected += 1;
+        return;
+      }
+    }
+    const key = `${Math.round(x * 20)},${Math.round(z * 20)}`;
+    if (pointKeys.has(key)) return;
+    pointKeys.add(key);
+    points.push({ x, z });
+  };
+  const vehicleSegments = vehicleNav?.segments || [];
+  const incidentByNode = new Map();
+  vehicleSegments.forEach((segment) => {
+    (segment.cuts || []).forEach((cut) => {
+      if (!Number.isInteger(cut.nodeId)) return;
+      if (!incidentByNode.has(cut.nodeId)) incidentByNode.set(cut.nodeId, []);
+      const incident = incidentByNode.get(cut.nodeId);
+      if (!incident.includes(segment)) incident.push(segment);
+    });
+  });
+  // One lamp marks each true intersection. A deterministic corner choice keeps
+  // the layout varied while avoiding the four-lamps-per-crossroad visual noise.
+  (vehicleNav?.nodes || []).forEach((node) => {
+    const incident = incidentByNode.get(node.id) || [];
+    const horizontal = incident.filter((segment) => Math.abs(segment.b.x - segment.a.x) >= Math.abs(segment.b.z - segment.a.z));
+    const vertical = incident.filter((segment) => Math.abs(segment.b.z - segment.a.z) > Math.abs(segment.b.x - segment.a.x));
+    if (!horizontal.length || !vertical.length) return;
+    const random = seeded3d(`street-intersection-lamp-${node.id}`);
+    const xSide = random() < 0.5 ? -1 : 1;
+    const zSide = random() < 0.5 ? -1 : 1;
+    const xCurb = Math.max(...vertical.map((segment) => segment.widthWorld * 0.5)) + 0.028;
+    const zCurb = Math.max(...horizontal.map((segment) => segment.widthWorld * 0.5)) + 0.028;
+    addPoint(node.x + xCurb * xSide, node.z + zCurb * zSide);
+  });
+  // Between intersections, use only one lamp on a normal block frontage and
+  // two on an unusually long frontage. Poles sit just outside the road edge,
+  // on the curb instead of in the middle of the sidewalk.
+  vehicleSegments.forEach((segment) => {
+    const dx = segment.b.x - segment.a.x;
+    const dz = segment.b.z - segment.a.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.45) return;
+    const ux = dx / length;
+    const uz = dz / length;
+    const nx = -dz / length;
+    const nz = dx / length;
+    const curbOffset = segment.widthWorld * 0.5 + 0.028;
+    const cuts = (segment.cuts?.length ? segment.cuts : [{ point: segment.a }, { point: segment.b }])
+      .map((cut) => cut.point)
+      .filter(Boolean);
+    for (let cutIndex = 0; cutIndex < cuts.length - 1; cutIndex += 1) {
+      const start = cuts[cutIndex];
+      const end = cuts[cutIndex + 1];
+      const sectionLength = Math.hypot(end.x - start.x, end.z - start.z);
+      if (sectionLength < 0.5) continue;
+      const random = seeded3d(`street-frontage-lamps-${segment.id}-${cutIndex}`);
+      const lampCount = sectionLength > 3.35 ? 2 : 1;
+      const placements = lampCount === 2
+        ? [0.25 + random() * 0.12, 0.63 + random() * 0.12]
+        : [0.35 + random() * 0.3];
+      placements.forEach((t, index) => {
+        const side = random() < 0.5 ? -1 : 1;
+        const distance = sectionLength * t;
+        const alternateSide = index && random() < 0.68 ? -side : side;
+        addPoint(
+          start.x + ux * distance + nx * curbOffset * alternateSide,
+          start.z + uz * distance + nz * curbOffset * alternateSide,
+        );
+      });
+    }
+  });
+  // Compatibility fallback for non-grid layouts that do not expose vehicle roads.
+  if (!points.length) (pedestrianNav?.segments || []).filter((segment) => segment.sidewalk && !segment.crosswalk).forEach((segment, index) => {
+    const dx = segment.b.x - segment.a.x;
+    const dz = segment.b.z - segment.a.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.45) return;
+    const random = seeded3d(`fallback-street-lamps-${segment.id || index}`);
+    let distance = Math.min(0.25, length * 0.2);
+    while (distance < length) {
+      const t = distance / length;
+      addPoint(segment.a.x + dx * t, segment.a.z + dz * t);
+      distance += 1.8 + random() * 1.6;
+    }
+  });
+  const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x31302c, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.88, metalness: 0.22 });
+  const bulbMaterial = new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xffb43b, emissiveIntensity: 0, roughness: 0.48 });
+  const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.018, 0.026, 0.9, 5), poleMaterial, points.length);
+  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.055, 6, 5), bulbMaterial, points.length);
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  points.forEach((point, index) => {
+    matrix.compose(new THREE.Vector3(point.x, 0.45, point.z), quaternion, scale);
+    poles.setMatrixAt(index, matrix);
+    matrix.compose(new THREE.Vector3(point.x, 0.92, point.z), quaternion, scale);
+    bulbs.setMatrixAt(index, matrix);
+  });
+  group.add(poles, bulbs);
+  scene.add(group);
+  // Street lighting is intentionally camera-independent and contains no
+  // realtime lights or shadow maps. One instanced decal marks each bulb while
+  // batched road ribbons and emissive building windows provide the nighttime detail.
+  const atmosphere = createStreetAtmosphere({
+    points,
+    segments: vehicleSegments,
+    buildingMap: options.buildingMap,
+  });
+  group.add(atmosphere.group);
+  group.userData.lampCount = points.length;
+  group.userData.dynamicLightCount = 0;
+  group.userData.shadowLightCount = 0;
+  group.userData.activeDynamicLightCount = 0;
+  group.userData.boundaryRejected = boundaryRejected;
+  group.userData.decalCount = atmosphere.stats.decalCount;
+  group.userData.contaminatedStreetCount = atmosphere.stats.contaminatedStreetCount;
+  group.userData.buildingWindowCount = atmosphere.stats.windowCount;
+  group.userData.litWindowCount = atmosphere.stats.litWindowCount;
+  group.userData.overnightWindowCount = atmosphere.stats.overnightWindowCount;
+  group.userData.storefrontCount = atmosphere.stats.storefrontCount;
+  group.userData.buildingDoorCount = atmosphere.stats.doorCount;
+  group.userData.doubleDoorCount = atmosphere.stats.doubleDoorCount;
+  group.userData.garageDoorCount = atmosphere.stats.garageDoorCount;
+  group.userData.maxLampsPerStreet = atmosphere.stats.maxLampsPerStreet;
+  group.userData.night = false;
+
+    // nearby façades elsewhere in view stay unlit.
+  let lastLampNight = null;
+  function setPhase(timePhase) {
+    const darkness = atmosphere.setPhase(timePhase);
+    const night = darkness > 0.005;
+    if (night !== lastLampNight) {
+      lastLampNight = night;
+      group.userData.night = night;
+      bulbMaterial.color.set(night ? 0xffd48a : 0x4d493e);
+      poleMaterial.emissive.setHex(night ? 0x38250f : 0x000000);
+    }
+    bulbMaterial.emissiveIntensity = 2.25 * darkness;
+    poleMaterial.emissiveIntensity = 0.12 * darkness;
+    group.userData.activeWindowCount = atmosphere.group.userData.activeWindowCount || 0;
+    group.userData.lightingMinute = atmosphere.group.userData.minute || 0;
+  }
+  setPhase(0.25);
+  return { group, bulbs, setPhase, atmosphere };
+}
+
 function updateMissionHighlightObject(entry, highlight) {
   const rig = entry?.missionHighlight;
   let destination = highlight?.active && entry?.buildingMap?.get(highlight.parcelId);
@@ -3842,49 +4405,47 @@ function updateMissionTargetObject(entry, target, buildingMap) {
 
 function pedestrianDensityForPayload(payload = {}) {
   const speed = Number(payload.timeSpeed || 1);
-  if (speed >= 500) return 0;
+  if (speed >= 40) return 0;
   const period = String(payload.timePeriod || '').toLowerCase();
-  if (period === 'night') return 0.05;
-  return 1;
+  let density = speed >= 20 ? 0.36 : 1;
+  if (period === 'night') density = Math.min(density, 0.05);
+  return density;
 }
 
 function createPopulationRig(scene, agents, blocks, center, scale, roads = [], buildingMap = null) {
-  const people = Array.isArray(agents) ? agents.slice(0, 50) : [];
+  const slotCount = 50;
   const destinations = [];
+  const destinationByParcel = new Map();
   const roadNav = buildPawnRoadNav(roads || [], center, scale, blocks || []);
-  if (buildingMap?.size) {
-    buildingMap.forEach((building) => {
-      const parcel = building.parcel || {};
-      if (!parcel.isBuildable || parcel.plannedPark || parcel.isFamilyEstate || parcel.subtype === 'Family Estate') return;
-      const door = routePointForBuilding(building, roadNav);
-      const inside = buildingCenterXZ(building);
-      if (!door || !inside) return;
-      destinations.push({ x: door.x, z: door.y, door: { x: door.x, z: door.y }, inside, parcelId: parcel.id, building });
-    });
-  }
+  const rememberDestination = (destination) => {
+    destinations.push(destination);
+    if (destination.parcelId) destinationByParcel.set(destination.parcelId, destination);
+  };
+  if (buildingMap?.size) buildingMap.forEach((building) => {
+    const parcel = building.parcel || {};
+    if (!parcel.isBuildable || parcel.plannedPark || parcel.isFamilyEstate || parcel.subtype === 'Family Estate') return;
+    const door = routePointForBuilding(building, roadNav);
+    const inside = buildingCenterXZ(building);
+    if (door && inside) rememberDestination({ x: door.x, z: door.y, door: { x: door.x, z: door.y }, inside, parcelId: parcel.id, building });
+  });
   if (!destinations.length) (blocks || []).forEach((block) => (block.parcels || []).forEach((parcel) => {
     if (!parcel?.isBuildable || parcel.plannedPark || parcel.isFamilyEstate) return;
-    const c = centroid(parcel.polygon || []);
-    const wp = worldPoint(c, center, scale);
-    destinations.push({ x: wp.x, z: wp.y, door: { x: wp.x, z: wp.y }, inside: { x: wp.x, z: wp.y }, parcelId: parcel.id });
+    const wp = worldPoint(centroid(parcel.polygon || []), center, scale);
+    rememberDestination({ x: wp.x, z: wp.y, door: { x: wp.x, z: wp.y }, inside: { x: wp.x, z: wp.y }, parcelId: parcel.id });
   }));
-  if (!people.length || destinations.length < 2) return null;
+  if (destinations.length < 2) return null;
   const bodyGeometry = new THREE.CapsuleGeometry(0.075, 0.17, 2, 5);
   const headGeometry = new THREE.SphereGeometry(0.066, 6, 5);
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
   const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
-  const bodies = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, people.length);
-  const heads = new THREE.InstancedMesh(headGeometry, headMaterial, people.length);
-  bodies.castShadow = false;
-  bodies.receiveShadow = false;
-  heads.castShadow = false;
+  const bodies = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, slotCount);
+  const heads = new THREE.InstancedMesh(headGeometry, headMaterial, slotCount);
   const matrix = new THREE.Matrix4();
   const color = new THREE.Color();
   const hiddenScale = new THREE.Vector3(0, 0, 0);
   const visibleScale = new THREE.Vector3(1, 1, 1);
   const quat = new THREE.Quaternion();
   const pickDestination = (seed, avoid) => {
-    if (!destinations.length) return null;
     let index = Math.floor(seed * 1000003) % destinations.length;
     if (destinations[index] === avoid && destinations.length > 1) index = (index + 1 + Math.floor(seed * 97)) % destinations.length;
     return destinations[index];
@@ -3906,77 +4467,100 @@ function createPopulationRig(scene, agents, blocks, center, scale, roads = [], b
     appendDistinctPathPoint(path, to.inside || end);
     return roadNav.sidewalkOnly ? path : sidewalkPath(path, seed > 0.5 ? 1 : -1, 0.24);
   };
-  const entries = people.map((person, index) => {
-    const seed = Number(person.seed || 0);
-    const aDest = pickDestination(seed + index * 0.017, null);
-    const bDest = pickDestination(seed * 1.77 + index * 0.113, aDest);
-    const path = pedestrianPath(aDest, bDest, seed);
-    const mission = !!person.mission;
-    color.set(mission ? 0xd7a83f : ['#55463c', '#38434a', '#4d3e35', '#28332f', '#5b5150'][index % 5]);
+  const entries = Array.from({ length: slotCount }, () => ({ active: false, path: [], phase: 0, visualProgress: 0, logicalProgress: 0, inside: true, renderVisible: false, lastPosition: null }));
+  let pendingAgents = [];
+  function assignPerson(entry, person, index) {
+    if (!person) { entry.active = false; entry.personId = ''; entry.path = []; return; }
+    const seed = Number(person.seed || 0) || 0.31;
+    const from = destinationByParcel.get(person.fromParcelId) || pickDestination(seed + index * 0.017, null);
+    const to = destinationByParcel.get(person.toParcelId) || pickDestination(seed * 1.77 + index * 0.113, from);
+    const routeKey = `${person.routeId || ''}:${from?.parcelId || ''}:${to?.parcelId || ''}`;
+    if (entry.personId !== person.id || entry.routeKey !== routeKey) {
+      entry.personId = person.id;
+      entry.routeKey = routeKey;
+      entry.path = pedestrianPath(from, to, seed);
+      entry.distance = routeLength(entry.path);
+      entry.visualProgress = Math.max(0, Math.min(1, Number(person.progress || 0)));
+    }
+    entry.active = !!person.moving && !person.inside && entry.path.length > 1;
+    entry.logicalProgress = Math.max(0, Math.min(1, Number(person.progress || 0)));
+    // Match the player pawn's 1.1 world-units-per-simulated-minute pace.
+    entry.durationMinutes = Math.max(1, entry.distance / 1.1);
+    entry.speed = 1.1;
+    entry.seed = seed;
+    color.set(person.mission ? 0xd7a83f : ['#55463c', '#38434a', '#4d3e35', '#28332f', '#5b5150'][Number(person.color ?? index) % 5]);
     bodies.setColorAt(index, color);
     heads.setColorAt(index, new THREE.Color(index % 4 === 0 ? 0x8d6448 : index % 3 === 0 ? 0xb98765 : 0xc89b79));
-    return { from: aDest, to: bDest, path, phase: (seed * 1.73 + index * 0.137) % 1, speed: Number(person.speed || 0.8), distance: routeLength(path), mission, inside: seed > 0.82, dwell: 2 + (seed * 13) % 11, seed: seed || 0.31 };
-  });
-  function reroute(entry, index) {
-    entry.from = entry.to || pickDestination(entry.seed + index * 0.03, null);
-    entry.to = pickDestination((entry.seed += 0.371 + index * 0.009), entry.from);
-    entry.path = pedestrianPath(entry.from, entry.to, entry.seed);
-    entry.distance = routeLength(entry.path);
-    entry.phase = 0;
-    entry.inside = false;
-    entry.dwell = 4 + (hashNumber(`${entry.to.parcelId}-${index}-${entry.seed}`) % 11);
+  }
+  function sync(nextAgents) {
+    const next = Array.isArray(nextAgents) ? nextAgents.slice(0, slotCount) : [];
+    const byId = new Map(next.map((person) => [person.id, person]));
+    const assigned = new Set();
+    entries.forEach((entry, index) => {
+      const person = entry.personId && byId.get(entry.personId);
+      if (!person) { assignPerson(entry, null, index); return; }
+      assignPerson(entry, person, index);
+      assigned.add(person.id);
+    });
+    pendingAgents = next.filter((person) => !assigned.has(person.id));
+  }
+  function processPending(limit = 4) {
+    let populated = false;
+    while (limit > 0 && pendingAgents.length) {
+      const person = pendingAgents.shift();
+      const index = entries.findIndex((entry) => !entry.personId);
+      if (index < 0) break;
+      assignPerson(entries[index], person, index);
+      populated = true;
+      limit -= 1;
+    }
+    if (populated && bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
+    if (populated && heads.instanceColor) heads.instanceColor.needsUpdate = true;
+    return populated;
   }
   let lastUpdate = performance.now();
-  function update(now, moving, speedMultiplier = 1, density = 1) {
+  function update(now, moving, timing = {}, density = 1) {
+    const populated = processPending(4);
     const seconds = now * 0.001;
     const dt = Math.min(0.1, Math.max(0, (now - lastUpdate) / 1000));
     lastUpdate = now;
+    const periodMs = Math.max(16, Number(timing.timePeriodMs || 250));
+    const stepMinutes = Math.max(1, Number(timing.timeStepMinutes || 1));
+    const simulatedMinutesPerSecond = (1000 / periodMs) * stepMinutes;
     const visibleLimit = Math.max(0, Math.min(entries.length, Math.ceil(entries.length * Math.max(0, Math.min(1, density)))));
     entries.forEach((entry, index) => {
-      if (index >= visibleLimit) {
+      if (index >= visibleLimit || !entry.active) {
+        entry.renderVisible = false;
         matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
         bodies.setMatrixAt(index, matrix);
         heads.setMatrixAt(index, matrix);
         return;
       }
-      if (entry.inside) {
-        if (moving) entry.dwell -= dt * Math.max(0.25, speedMultiplier);
-        if (entry.dwell <= 0) reroute(entry, index);
-        if (entry.inside) {
-          matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
-          bodies.setMatrixAt(index, matrix);
-          heads.setMatrixAt(index, matrix);
-          return;
-        }
+      entry.renderVisible = true;
+      if (moving) {
+        const projected = entry.visualProgress + (simulatedMinutesPerSecond * dt) / Math.max(1, entry.durationMinutes || 35);
+        const catchUp = Math.max(0, entry.logicalProgress - projected) * Math.min(1, dt * 7);
+        entry.visualProgress = Math.min(1, projected + catchUp);
       }
-      if (moving) entry.phase += dt * (3.2 / entry.distance) * entry.speed * Math.max(0.25, speedMultiplier);
-      if (entry.phase >= 1) {
-        entry.phase = 1;
-        entry.inside = true;
-        matrix.compose(new THREE.Vector3(0, -20, 0), quat, hiddenScale);
-        bodies.setMatrixAt(index, matrix);
-        heads.setMatrixAt(index, matrix);
-        return;
-      }
+      entry.phase = Math.max(0, Math.min(1, entry.visualProgress));
       const pos = pointAlongPath(entry.path || [], entry.phase);
-      const x = pos.x;
-      const z = pos.z;
       const bob = moving ? Math.sin(seconds * 7 + index) * 0.009 : 0;
-      matrix.compose(new THREE.Vector3(x, 0.27 + bob, z), quat, visibleScale);
+      matrix.compose(new THREE.Vector3(pos.x, 0.27 + bob, pos.z), quat, visibleScale);
       bodies.setMatrixAt(index, matrix);
-      matrix.compose(new THREE.Vector3(x, 0.48 + bob, z), quat, visibleScale);
+      matrix.compose(new THREE.Vector3(pos.x, 0.48 + bob, pos.z), quat, visibleScale);
       heads.setMatrixAt(index, matrix);
+      entry.lastPosition = { x: pos.x, z: pos.z };
     });
     bodies.instanceMatrix.needsUpdate = true;
     heads.instanceMatrix.needsUpdate = true;
+    return populated || pendingAgents.length > 0;
   }
   bodies.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   heads.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
-  if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
   scene.add(bodies, heads);
-  update(performance.now(), false, 1, 1);
-  return { bodies, heads, update, count: people.length };
+  sync(agents);
+  update(performance.now(), false, {}, 1);
+  return { bodies, heads, entries, update, sync, count: slotCount };
 }
 
 function buildScene(payload) {
@@ -4131,6 +4715,7 @@ function buildScene(payload) {
 }
 
 function mount(root, payload, onSelect) {
+  const mountStarted = performance.now();
   cleanup(root);
   root._deskDonPayload = payload;
   root._deskDonSelect = onSelect;
@@ -4142,17 +4727,48 @@ function mount(root, payload, onSelect) {
   root.innerHTML = '';
   root.appendChild(renderer.domElement);
 
+  const sceneStarted = performance.now();
   const { scene, rayTargets, districtTargets, safehouseMarkers, buildingMap, debugCameraGroup, outlineGroup, territoryGroup, center, scale, roadSpawn, generated, ambient, sun, populationRig } = buildScene(payload);
+  const sceneBuiltAt = performance.now();
   const islandNavDistricts = generated.contextDistricts || [];
   const navRoads = (generated.roads || [])
     .concat(generated.inheritedRoads || [])
     .concat(...islandNavDistricts.map((district) => (district.renderedRoads || district.roads || []).concat(district.inheritedRoads || [])));
   const navBlocks = (generated.blocks || []).concat(...islandNavDistricts.map((district) => district.renderedBlocks || district.blocks || []));
   const roadNav = buildPawnRoadNav(navRoads, center, scale, navBlocks);
+  const vehicleNav = buildVehicleRoadNav(navRoads, center, scale);
   ensureBuildingEntryPoints(buildingMap, roadNav);
+  const populationVehicleRig = createCitizenVehicleRig(scene, buildingMap, roadNav, vehicleNav);
+  const streetCityPolygon = cleanWorldPoly(generated.outerPolygon || []).map((point) => {
+    const world = worldPoint(point, center, scale);
+    return { x: world.x, y: world.y };
+  });
+  const streetInfrastructure = createStreetInfrastructure(scene, roadNav, vehicleNav, {
+    ...(payload.streetInfrastructure || {}),
+    cityPolygon: streetCityPolygon,
+    buildingMap,
+  });
+  root.dataset.streetLampCount = String(streetInfrastructure?.group?.userData?.lampCount || 0);
+  root.dataset.streetLocalLightCount = String(streetInfrastructure?.group?.userData?.dynamicLightCount || 0);
+  root.dataset.streetPermanentLightCount = String(streetInfrastructure?.group?.userData?.lampCount || 0);
+  root.dataset.streetDynamicLightCount = String(streetInfrastructure?.group?.userData?.dynamicLightCount || 0);
+  root.dataset.streetShadowLightCount = String(streetInfrastructure?.group?.userData?.shadowLightCount || 0);
+  root.dataset.streetLampBoundaryRejected = String(streetInfrastructure?.group?.userData?.boundaryRejected || 0);
+  root.dataset.streetLampDecalCount = String(streetInfrastructure?.group?.userData?.decalCount || 0);
+  root.dataset.streetContaminatedStreetCount = String(streetInfrastructure?.group?.userData?.contaminatedStreetCount || 0);
+  root.dataset.streetBuildingWindowCount = String(streetInfrastructure?.group?.userData?.buildingWindowCount || 0);
+  root.dataset.streetLitWindowCount = String(streetInfrastructure?.group?.userData?.litWindowCount || 0);
+  root.dataset.streetOvernightWindowCount = String(streetInfrastructure?.group?.userData?.overnightWindowCount || 0);
+  root.dataset.streetStorefrontCount = String(streetInfrastructure?.group?.userData?.storefrontCount || 0);
+  root.dataset.streetBuildingDoorCount = String(streetInfrastructure?.group?.userData?.buildingDoorCount || 0);
+  root.dataset.streetDoubleDoorCount = String(streetInfrastructure?.group?.userData?.doubleDoorCount || 0);
+  root.dataset.streetGarageDoorCount = String(streetInfrastructure?.group?.userData?.garageDoorCount || 0);
+  root.dataset.streetMaxLampsPerStreet = String(streetInfrastructure?.group?.userData?.maxLampsPerStreet || 0);
+  root.dataset.streetLightMappedMaterials = '0';
   const playerPawn = createPlayerPawn(payload.playerPawn || {});
   const missionTarget = createMissionTargetRig(scene);
   const missionHighlight = createMissionHighlightRig(scene);
+  const missionTruck = createMissionTruckRig(scene);
   const playerRoute = new THREE.Group();
   const queuedRouteGroup = new THREE.Group();
   playerRoute.visible = false;
@@ -4203,8 +4819,14 @@ function mount(root, payload, onSelect) {
   let last = { x: 0, y: 0 };
   let start = { x: 0, y: 0 };
   const raycaster = new THREE.Raycaster();
+  const occlusionRaycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const keyState = new Set();
+  const occlusionDirection = new THREE.Vector3();
+  const occlusionTarget = new THREE.Vector3();
+  const occludedMaterials = new Map();
+  const occludedObjects = new Map();
+  let lastOcclusionKey = '';
   function setGlobal3dPointerActive(active) {
     if (active) {
       document.body.dataset.deskdon3dPointer = '1';
@@ -4317,6 +4939,103 @@ function mount(root, payload, onSelect) {
     camera.updateProjectionMatrix();
   }
 
+  function restoreCameraOcclusion() {
+    occludedMaterials.forEach((saved, material) => {
+      material.transparent = saved.transparent;
+      material.opacity = saved.opacity;
+      material.depthWrite = saved.depthWrite;
+      material.needsUpdate = true;
+    });
+    occludedObjects.forEach((renderOrder, object) => {
+      object.renderOrder = renderOrder;
+      object.userData.cameraOccluded = false;
+    });
+    occludedMaterials.clear();
+    occludedObjects.clear();
+  }
+
+  function updateCameraOcclusion() {
+    const enabled = cameraMode === 'iso' && (zoom >= 1.05 || elevation < 0.62);
+    occlusionTarget.set(isoTarget.x, 0.34, isoTarget.z);
+    const key = enabled
+      ? `${camera.position.x.toFixed(3)}:${camera.position.y.toFixed(3)}:${camera.position.z.toFixed(3)}:${occlusionTarget.x.toFixed(3)}:${occlusionTarget.z.toFixed(3)}`
+      : 'disabled';
+    if (key === lastOcclusionKey) return;
+    lastOcclusionKey = key;
+    if (!enabled) {
+      restoreCameraOcclusion();
+      root.dataset.cameraOccluderCount = '0';
+      return;
+    }
+    const targetDistance = camera.position.distanceTo(occlusionTarget);
+    if (targetDistance < 0.5) {
+      restoreCameraOcclusion();
+      root.dataset.cameraOccluderCount = '0';
+      return;
+    }
+    let focusEntry = null;
+    const focusPoint = { x: isoTarget.x, y: isoTarget.z };
+    buildingMap.forEach((entry) => {
+      if (!focusEntry && entry.worldFootprint?.length >= 3 && pointInPoly(focusPoint, entry.worldFootprint)) focusEntry = entry;
+    });
+    const cameraPoint = { x: camera.position.x, y: camera.position.z };
+    const cameraInsideFocus = !!(focusEntry
+      && pointInPoly(cameraPoint, focusEntry.worldFootprint)
+      && camera.position.y <= Number(focusEntry.height || 0) + 0.3);
+    occlusionDirection.copy(occlusionTarget).sub(camera.position).normalize();
+    occlusionRaycaster.set(camera.position, occlusionDirection);
+    occlusionRaycaster.near = 0;
+    occlusionRaycaster.far = Math.max(0.1, targetDistance - 0.18);
+    const blockers = new Set();
+    occlusionRaycaster.intersectObjects(rayTargets, false).forEach((hit) => {
+      const parcelId = hit.object?.userData?.parcel?.id;
+      if (!parcelId) return;
+      const focusMainStructure = focusEntry?.parcel?.id === parcelId
+        && (hit.object === focusEntry.mesh || hit.object === focusEntry.roofMesh);
+      if (focusMainStructure && !cameraInsideFocus) return;
+      blockers.add(hit.object);
+    });
+    root.dataset.cameraOccluderCount = String(blockers.size);
+    const nextMaterials = new Set();
+    blockers.forEach((object) => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.filter(Boolean).forEach((material) => nextMaterials.add(material));
+    });
+    occludedMaterials.forEach((saved, material) => {
+      if (nextMaterials.has(material)) return;
+      material.transparent = saved.transparent;
+      material.opacity = saved.opacity;
+      material.depthWrite = saved.depthWrite;
+      material.needsUpdate = true;
+      occludedMaterials.delete(material);
+    });
+    occludedObjects.forEach((renderOrder, object) => {
+      if (blockers.has(object)) return;
+      object.renderOrder = renderOrder;
+      object.userData.cameraOccluded = false;
+      occludedObjects.delete(object);
+    });
+    blockers.forEach((object) => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.filter(Boolean).forEach((material) => {
+        if (occludedMaterials.has(material)) return;
+        occludedMaterials.set(material, {
+          transparent: material.transparent,
+          opacity: material.opacity,
+          depthWrite: material.depthWrite,
+        });
+        material.transparent = true;
+        material.opacity = Math.min(0.2, Number(material.opacity ?? 1));
+        material.depthWrite = false;
+        material.needsUpdate = true;
+      });
+      if (occludedObjects.has(object)) return;
+      occludedObjects.set(object, object.renderOrder);
+      object.renderOrder = 17;
+      object.userData.cameraOccluded = true;
+    });
+  }
+
   function resize() {
     if (root._deskDonSuspended) return;
     applyPerformanceLevel();
@@ -4335,7 +5054,9 @@ function mount(root, payload, onSelect) {
     streetCamera.aspect = aspect;
     streetCamera.updateProjectionMatrix();
     updateCamera();
-    renderer.render(scene, cameraMode === 'street' ? streetCamera : camera);
+    updateCameraOcclusion();
+    const activeCamera = cameraMode === 'street' ? streetCamera : camera;
+    renderer.render(scene, activeCamera);
   }
 
   function updateZoomProjection() {
@@ -4350,7 +5071,9 @@ function mount(root, payload, onSelect) {
   function renderLoop() {
     applyPerformanceLevel();
     updateCamera();
-    renderer.render(scene, cameraMode === 'street' ? streetCamera : camera);
+    updateCameraOcclusion();
+    const activeCamera = cameraMode === 'street' ? streetCamera : camera;
+    renderer.render(scene, activeCamera);
     renderedFrames += 1;
   }
 
@@ -4365,13 +5088,17 @@ function mount(root, payload, onSelect) {
   }
 
   function applyLiveLighting(now) {
-    const lighting = lightingAtPhase(currentTimePhase(now));
+    const phase = currentTimePhase(now);
+    const lighting = lightingAtPhase(phase);
     scene.background.copy(lighting.bg);
     ambient.color.copy(lighting.ambientColor);
     ambient.intensity = lighting.ambient;
     sun.color.copy(lighting.sunColor);
     sun.intensity = lighting.sun;
     sun.position.set(lighting.sunPos[0], lighting.sunPos[1], lighting.sunPos[2]);
+    streetInfrastructure?.setPhase?.(phase);
+    root.dataset.streetActiveWindowCount = String(streetInfrastructure?.group?.userData?.activeWindowCount || 0);
+    root.dataset.streetLightingMinute = String(Math.round(streetInfrastructure?.group?.userData?.lightingMinute || 0));
   }
 
   function clampStreetPosition(pos) {
@@ -4411,11 +5138,9 @@ function mount(root, payload, onSelect) {
     lastFrame = now;
     const livePayload = root._deskDonPayload || payload;
     const populationDensity = pedestrianDensityForPayload(livePayload);
-    const populationInterval = Number(livePayload.timeSpeed || 1) >= 500 ? 240 : 32;
-    if (populationRig && (livePayload.timeMoving || populationDensity < 1) && now - (populationRig.lastUpdate || 0) > populationInterval) {
-      populationRig.update(now, !!livePayload.timeMoving, Number(livePayload.timeVisualSpeed || livePayload.timeSpeed || 1), populationDensity);
-      populationRig.lastUpdate = now;
-    }
+    const populationSuppressed = Number(livePayload.timeSpeed || 1) >= 40;
+    const populationLoading = !!populationRig?.update?.(now, !!livePayload.timeMoving, livePayload, populationDensity);
+    const vehiclePopulationLoading = !!populationVehicleRig?.update?.(now, !!livePayload.timeMoving, livePayload, !populationSuppressed);
     if (now - fpsLast >= 1000) {
       const measuredFps = Math.round((renderedFrames * 1000) / Math.max(1, now - fpsLast));
       fpsLabel.textContent = renderedFrames ? `FPS ${measuredFps}` : 'FPS idle';
@@ -4474,7 +5199,10 @@ function mount(root, payload, onSelect) {
       }));
     }
     const feedbackAnimating = !!(livePayload.playerPawn?.action?.active || liveEntry?.actionProgress?.visible || liveEntry?.cashFloat || (livePayload.playerPawn?.cashFloat?.amount && now - Number(livePayload.playerPawn.cashFloat.startedAt || 0) < 1800));
-    if ((pawnRouteLive || feedbackAnimating) && liveEntry) updatePlayerPawnObject(liveEntry, livePayload.playerPawn, buildingMap);
+    const vehicleWasVisible = !!liveEntry?.missionTruck?.visible;
+    if ((pawnRouteLive || feedbackAnimating || livePayload.missionVehicle?.active || vehicleWasVisible) && liveEntry) updatePlayerPawnObject(liveEntry, livePayload.playerPawn, buildingMap);
+    const truckAnimating = !!(liveEntry && updateMissionTruckObject(liveEntry, livePayload.missionVehicle, buildingMap));
+    if (livePayload.missionVehicle?.active && playerPawn) playerPawn.visible = false;
     if (playerPawn?.visible) {
       playerPawn.scale.setScalar(1);
     }
@@ -4489,7 +5217,7 @@ function mount(root, payload, onSelect) {
       updateZoomProjection();
     }
     const streetMoved = stepStreet(dt);
-    const needsContinuousRender = livePayload.timeMoving || pawnRouteLive || missionRouteLive || missionAnimating || highlightAnimating || feedbackAnimating || animateSafehouseMarkers || zoomAnimating || streetMoved || cameraMode === 'street';
+    const needsContinuousRender = livePayload.timeMoving || pawnRouteLive || missionRouteLive || missionAnimating || highlightAnimating || truckAnimating || feedbackAnimating || animateSafehouseMarkers || zoomAnimating || streetMoved || populationLoading || vehiclePopulationLoading || cameraMode === 'street';
     if (livePayload.timeMoving && (pawnRouteLive || missionRouteLive) && nextRenderAt > now + 1000 / 180) nextRenderAt = now;
     if (needsContinuousRender && now >= nextRenderAt) {
       if (livePayload.timeMoving) applyLiveLighting(now);
@@ -4870,12 +5598,17 @@ function mount(root, payload, onSelect) {
   updatePlayerPawnObject({ root, playerPawn, playerRoute, queuedRouteGroup, roadNav, roadSpawn }, payload.playerPawn, buildingMap);
   const frame = requestAnimationFrame(animate);
   function focusParcel(parcelId, sourceLocation) { const destination = buildingMap.get(parcelId), point = destination?.center || (sourceLocation ? worldPoint(sourceLocation, center, scale) : null); if (!point) return false; panX = point.x; panZ = point.y; targetZoom = Math.max(1.35, targetZoom); cameraMode = 'iso'; saveView(); renderLoop(); return true; }
-  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, animate, frame, playerPawn, missionTarget, missionHighlight, playerRoute, queuedRouteGroup, buildingMap, roadNav, roadSpawn, safehouseMarkers, center, scale, territoryGroup, generated, populationRig };
+  const mountedEntry = { root, renderer, scene, onResize, onWheel, wheelPanel, onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel, onContextMenu, onKeyDown, onKeyUp, onDocumentMouseMove, applyLiveLighting, renderLoop, focusParcel, animate, frame, playerPawn, missionTarget, missionHighlight, missionTruck, playerRoute, queuedRouteGroup, buildingMap, roadNav, vehicleNav, roadSpawn, safehouseMarkers, center, scale, territoryGroup, generated, populationRig, populationVehicleRig, streetInfrastructure };
   mounted.set(root, mountedEntry);
+  root.dataset.rendererSceneMs = String(Math.round(sceneBuiltAt - sceneStarted));
+  root.dataset.rendererMountMs = String(Math.round(performance.now() - mountStarted));
   refreshMergedMafiaTerritoryOverlay(mountedEntry);
   updateMissionTargetObject(mountedEntry, payload.missionTarget, buildingMap);
   updateMissionHighlightObject(mountedEntry, payload.missionHighlight);
-  populationRig?.update(performance.now(), false, 1, pedestrianDensityForPayload(payload));
+  updateMissionTruckObject(mountedEntry, payload.missionVehicle, buildingMap);
+  if (payload.missionVehicle?.active) playerPawn.visible = false;
+  populationRig?.update(performance.now(), false, payload, pedestrianDensityForPayload(payload));
+  populationVehicleRig?.update?.(performance.now(), false, payload, true);
 }
 
 function withMounted(root, fn) {
@@ -4922,9 +5655,15 @@ function updateTime(root, timePayload) {
     updatePlayerPawnObject(entry, root._deskDonPayload.playerPawn, entry.buildingMap);
     updateMissionTargetObject(entry, root._deskDonPayload.missionTarget, entry.buildingMap);
     updateMissionHighlightObject(entry, root._deskDonPayload.missionHighlight);
-    entry.populationRig?.update(performance.now(), !!root._deskDonPayload.timeMoving, Number(root._deskDonPayload.timeVisualSpeed || root._deskDonPayload.timeSpeed || 1), pedestrianDensityForPayload(root._deskDonPayload));
+    updateMissionTruckObject(entry, root._deskDonPayload.missionVehicle, entry.buildingMap);
+    if (root._deskDonPayload.missionVehicle?.active && entry.playerPawn) entry.playerPawn.visible = false;
+    const populationSuppressed = Number(root._deskDonPayload.timeSpeed || 1) >= 40;
+    if (!populationSuppressed) entry.populationRig?.sync?.(root._deskDonPayload.populationAgents);
+    entry.populationRig?.update(performance.now(), !!root._deskDonPayload.timeMoving, root._deskDonPayload, pedestrianDensityForPayload(root._deskDonPayload));
+    if (!populationSuppressed) entry.populationVehicleRig?.sync?.(root._deskDonPayload.populationVehicles);
+    entry.populationVehicleRig?.update?.(performance.now(), !!root._deskDonPayload.timeMoving, root._deskDonPayload, !populationSuppressed);
     if (root._deskDonPayload.timeMoving) {
-      if (root._deskDonPayload.playerPawn?.targetParcelId || root._deskDonPayload.missionTarget?.active) entry.renderLoop?.();
+      if (root._deskDonPayload.playerPawn?.targetParcelId || root._deskDonPayload.missionTarget?.active || root._deskDonPayload.missionVehicle?.moving) entry.renderLoop?.();
       return;
     }
     entry.applyLiveLighting?.(performance.now());

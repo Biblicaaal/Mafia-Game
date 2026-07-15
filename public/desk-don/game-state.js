@@ -1,6 +1,6 @@
 'use strict';
 (function(root){
-  var VERSION=1;
+  var VERSION=2;
   var hasOwn=Object.prototype.hasOwnProperty;
 
   function object(value){return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}
@@ -42,6 +42,7 @@
     game.world.protectedBuildings=object(first(game.world.protectedBuildings,legacyValue(state,'protectedBusinesses')));
     game.world.buildingStates=object(first(game.world.buildingStates,legacyValue(state,'buildingStates')));
     game.world.scouting=object(first(game.world.scouting,legacyValue(state,'buildingIntel')));
+    game.world.population=object(first(game.world.population,legacyValue(state,'population')));
     game.world.pressure=object(game.world.pressure);
     game.world.pressure.heat=Number(first(game.world.pressure.heat,legacyValue(state,'heat')))||0;
     game.world.pressure.police=Number(first(game.world.pressure.police,legacyValue(state,'police')))||0;
@@ -75,7 +76,7 @@
   var aliases={
     clean:['player','money','clean'],dirty:['player','money','dirty'],playerLocation:['player','location'],
     collectionEnvelopes:['economy','heldEnvelopes'],organizationFinance:['economy','mafia'],
-    protectedBusinesses:['world','protectedBuildings'],buildingStates:['world','buildingStates'],buildingIntel:['world','scouting'],heat:['world','pressure','heat'],police:['world','pressure','police'],
+    protectedBusinesses:['world','protectedBuildings'],buildingStates:['world','buildingStates'],buildingIntel:['world','scouting'],population:['world','population'],heat:['world','pressure','heat'],police:['world','pressure','police'],
     selected:['selection','districtId'],selectedParcel:['selection','buildingId'],selected3dParcel:['selection','renderedBuilding'],contextParcel:['selection','contextBuilding'],
     day:['clock','day'],time:['clock','period'],timeMinuteOfDay:['clock','minuteOfDay'],
     playerSafehouse:['safehouse','assignment'],safehouseRent:['safehouse','rent'],safehouseNeeds:['safehouse','needs'],safehouseUtilities:['safehouse','utilities'],safehouseOwnership:['safehouse','ownership'],

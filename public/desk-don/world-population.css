@@ -1,0 +1,438 @@
+.family-board.phase2.family-clean:has(> .world-people-index) {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 108px);
+  min-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.app-shell .main:has(.world-people-index) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.app-shell .main:has(.world-people-index) > .stop {
+  flex: 0 0 auto;
+}
+
+.app-shell .main:has(.world-people-index) > .family-board.phase2.family-clean {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
+.family-board.phase2.family-clean:has(> .world-people-index) > .family-tabs-clean {
+  flex: 0 0 auto;
+}
+
+.world-people-index {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  color: #eadcb8;
+  background:
+    radial-gradient(circle at 82% 0, rgba(143, 91, 29, .12), transparent 34%),
+    linear-gradient(145deg, rgba(31, 19, 10, .93), rgba(10, 9, 8, .97));
+  border: 1px solid rgba(202, 157, 61, .28);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.world-people-index > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 2px 7px 11px;
+  border-bottom: 1px solid rgba(203, 160, 67, .22);
+}
+
+.world-people-index > header small,
+.world-people-index dt,
+.world-people-tools,
+.world-people-layout > aside > small,
+.building-people-panel > div > small {
+  color: #ad8c47;
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.world-people-index > header h2 {
+  margin: 2px 0 3px;
+  color: #f0d58f;
+  font: 26px Georgia, serif;
+}
+
+.world-people-index > header p {
+  margin: 0;
+  color: #a89b82;
+  font-size: 12px;
+}
+
+.world-population-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(84px, 1fr));
+  gap: 6px;
+}
+
+.world-population-stats span {
+  padding: 6px 9px;
+  background: rgba(0, 0, 0, .32);
+  border: 1px solid rgba(207, 164, 65, .17);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.world-population-stats b {
+  display: block;
+  color: #f1cf73;
+  font-size: 16px;
+}
+
+.world-people-tools {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 7px;
+}
+
+.world-people-tools input[type="search"],
+.world-people-tools select {
+  height: 34px;
+  color: #ead9ad;
+  background: #100e0c;
+  border: 1px solid #75551f;
+  outline: 0;
+  box-sizing: border-box;
+}
+
+.world-people-tools input[type="search"] {
+  flex: 1 1 240px;
+  min-width: 140px;
+  padding: 0 11px;
+}
+
+.world-people-tools input[type="search"]:focus,
+.world-people-tools select:focus {
+  border-color: #d6a642;
+  box-shadow: 0 0 0 2px rgba(230, 179, 69, .14);
+}
+
+.world-people-tools select {
+  flex: 0 0 160px;
+  padding: 0 8px;
+}
+
+.world-people-tools label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.world-people-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 34%) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-top: 1px solid rgba(207, 164, 65, .15);
+  overflow: hidden;
+}
+
+.world-people-layout > aside {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  padding: 9px 7px;
+  border-right: 1px solid rgba(207, 164, 65, .2);
+  overflow: hidden;
+}
+
+.world-people-layout > aside > div {
+  min-height: 0;
+  margin-top: 7px;
+  padding-right: 5px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.world-person-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 8px;
+  padding: 8px;
+  text-align: left;
+  color: #c9b990;
+  background: rgba(16, 14, 12, .76);
+  border: 1px solid transparent;
+  border-bottom-color: rgba(203, 160, 67, .12);
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+.world-person-row:hover,
+.world-person-row:focus {
+  background: #261a0e;
+  border-color: #b6862e;
+  box-shadow: 0 0 0 1px rgba(236, 188, 74, .18);
+}
+
+.world-person-row > span {
+  grid-row: 1 / 4;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 40px;
+  color: #1a1108;
+  background: #c29a49;
+  border: 2px solid #5f4119;
+  font: 900 12px Georgia, serif;
+}
+
+.world-person-row b {
+  min-width: 0;
+  overflow: hidden;
+  color: #efd48c;
+  font: 13px Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-person-row small {
+  overflow: hidden;
+  color: #aa9874;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-person-row em {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #766b5a;
+  font-size: 9px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-person-row.bookmarked { border-left: 3px solid #e1b347; }
+.world-person-row.deceased { filter: grayscale(1); opacity: .62; }
+
+.world-person-dossier {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  min-height: 0;
+  padding: 9px 12px;
+  overflow: hidden;
+  background: radial-gradient(circle at top right, rgba(111, 69, 21, .14), transparent 40%);
+}
+
+.world-person-dossier > header,
+.world-person-dossier > .world-person-tags,
+.world-person-dossier > .world-person-actions,
+.world-person-dossier > dl {
+  grid-column: 1 / -1;
+}
+
+.world-person-dossier > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(203, 160, 67, .22);
+}
+
+.world-person-dossier > header > span {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 50px;
+  color: #241506;
+  background: linear-gradient(#e0bc70, #9a6d29);
+  border: 3px double #5d3e18;
+  font: 900 18px Georgia, serif;
+}
+
+.world-person-dossier h2 {
+  margin: 1px 0;
+  color: #f1d48b;
+  font: 21px Georgia, serif;
+}
+
+.world-person-dossier p {
+  margin: 2px 0;
+  color: #baad91;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.world-person-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 0;
+}
+
+.world-person-tags span {
+  padding: 3px 7px;
+  color: #e4c778;
+  background: #2a1d0f;
+  border: 1px solid #6d4c1d;
+  border-radius: 12px;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.world-person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.world-person-actions button { min-height: 27px; padding-block: 4px; }
+
+.world-person-dossier dl {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0 0 4px;
+}
+
+.world-person-dossier dl div {
+  min-width: 0;
+  padding: 5px 6px;
+  background: rgba(0, 0, 0, .27);
+  border: 1px solid rgba(203, 160, 67, .13);
+}
+
+.world-person-dossier dt { margin-bottom: 2px; }
+
+.world-person-dossier dd {
+  margin: 0;
+  overflow: hidden;
+  color: #ecddba;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-person-dossier > section {
+  min-width: 0;
+  margin-top: 0;
+  padding: 5px 7px;
+  background: rgba(11, 10, 9, .45);
+  border-left: 2px solid #8b6426;
+}
+
+.world-person-dossier > section h3 {
+  margin: 0 0 3px;
+  color: #d7b865;
+  font: 13px Georgia, serif;
+}
+
+.world-person-dossier > section .world-stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.world-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.world-stat-grid span { padding: 4px; background: rgba(255, 255, 255, .025); }
+.world-stat-grid small { display: block; color: #8f8066; font-size: 8px; text-transform: uppercase; }
+.world-stat-grid b { color: #e9d29a; }
+.world-person-empty { display: grid; place-content: center; text-align: center; color: #9b8d73; }
+.world-no-results { padding: 20px 10px; color: #8f8066; text-align: center; }
+
+.world-people-layout > aside > div {
+  scrollbar-color: #8e6428 #15110e;
+  scrollbar-width: thin;
+}
+
+.world-people-layout > aside > div::-webkit-scrollbar { width: 9px; }
+.world-people-layout > aside > div::-webkit-scrollbar-track {
+  background: #15110e;
+  border-left: 1px solid rgba(203, 160, 67, .12);
+}
+.world-people-layout > aside > div::-webkit-scrollbar-thumb {
+  background: linear-gradient(#a77a33, #6d481d);
+  border: 2px solid #15110e;
+  border-radius: 5px;
+}
+.world-people-layout > aside > div::-webkit-scrollbar-thumb:hover { background: #c4943d; }
+
+.building-people-panel { display: grid; gap: 10px; }
+.building-people-panel > div { display: grid; gap: 5px; }
+.building-person-link {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  padding: 7px;
+  text-align: left;
+  color: #d7c59d;
+  background: rgba(0, 0, 0, .24);
+  border: 1px solid rgba(199, 154, 60, .16);
+}
+.building-person-link:hover { border-color: #d19e39; background: #24190e; }
+.building-person-link > span {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  color: #211508;
+  background: #b98b37;
+  font: bold 11px Georgia, serif;
+}
+.building-person-link > b { color: #e9cc7b; font-size: 12px; }
+.building-person-link small { color: #887a62; font-size: 9px; }
+.family-tabs-clean button[data-tab="People Index"] { min-width: 112px; }
+.world-people-index button { cursor: pointer; }
+
+@media (max-width: 1250px) {
+  .world-population-stats { grid-template-columns: repeat(2, minmax(84px, 1fr)); }
+  .world-person-dossier dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .world-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .family-board.phase2.family-clean:has(> .world-people-index) {
+    height: auto;
+    min-height: calc(100dvh - 108px);
+    overflow: visible;
+  }
+  .world-people-index { display: block; overflow: visible; }
+  .world-people-index > header { display: block; }
+  .world-population-stats { margin-top: 10px; }
+  .world-people-tools { flex-wrap: wrap; }
+  .world-people-layout { display: block; overflow: visible; }
+  .world-people-layout > aside { height: 340px; border-right: 0; border-bottom: 1px solid rgba(207, 164, 65, .2); }
+  .app-shell .main:has(.world-people-index) {
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+  .world-person-dossier { display: block; max-height: none; overflow: visible; }
+}

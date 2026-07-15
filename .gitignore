@@ -3,4 +3,7 @@ dist/
 dev-server*.log
 vite*.log
 preview*.png
+preview*.log
+population-*.png
+video-output/
 .env
